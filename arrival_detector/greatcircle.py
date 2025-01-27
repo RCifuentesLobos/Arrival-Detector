@@ -23,6 +23,46 @@ def haversine(lon1: float, lat1: float,
     return distance
 
 
+# approximate distance between two points on a sphere in degrees
+def distance_in_degrees(lat1: float, lon1: float, 
+                        lat2: float, lon2: float):
+    """
+    Computes the distance between two points on a sphere in degrees
+
+    Parameters:
+    lat1, lon1: Coordinate of the first point in degrees
+    lat2, lon2: Coordinate of the second point in degrees
+
+    Returns:
+    Angular distance in degrees
+    """
+    # convert to radians
+    lat1_rad = np.radians(lat1)
+    lon1_rad = np.radians(lon1)
+    lat2_rad = np.radians(lat2)
+    lon2_rad = np.radians(lon2)
+    # longitude difference 
+    delta_lon = lon2_rad - lon1_rad
+    # spherical cosine
+    cos_c = np.sin(lat1_rad) * np.sin(lat2_rad) + np.cos(lat1_rad) * np.cos(lat2_rad) * np.cos(delta_lon)
+    # clip to avoid numerical errors
+    cos_c = np.clip(cos_c, -1.0, 1.0)
+    # angular distance
+    c = np.arccos(cos_c)
+    # back to degrees
+    degrees_between = np.degrees(c)
+
+    return degrees_between
+
+# Ejemplo de uso
+if __name__ == "__main__":
+    lat1, lon1 = 0, 0  # Punto 1: Ecuador y Greenwich
+    lat2, lon2 = 10, 10  # Punto 2
+
+    distancia = distancia_en_grados(lat1, lon1, lat2, lon2)
+    print(f"La distancia angular entre los puntos es: {distancia:.6f} grados")
+
+
 # estimate the time it will take a tsunami wave to bridge that distance
 def estimate_travel_time(lon1: float, lat1: float,
                          lon2: float, lat2: float,

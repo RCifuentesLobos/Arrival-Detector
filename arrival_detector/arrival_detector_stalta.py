@@ -18,6 +18,14 @@ deltat: int = 30
 sta_window: int = 20
 lta_window: int = 600
 trigger_value: int = 8
+# define POI discrination criteria
+# minimum distance from POI to fault to consider for arrival algorithm
+min_distance: float = 10 # in degrees
+# minimum amplitude tolerance for POI to be considered (amplitude
+# in meters within which the signal is considered noise, above the 
+# threshold, it is considered a tsunami signal)
+min_amplitude: float = 0.05 # in meters
+
 
 
 def main(dir_out: str = dir_out,
@@ -26,9 +34,14 @@ def main(dir_out: str = dir_out,
          lta_window: int = lta_window,
          trigger_value: int = trigger_value,
          depth_file: str = None,
-         filter_depth: bool = False) -> None:
+         filter_depth: bool = False,
+         filter_distance: bool = True,
+         min_distance: float = min_distance,
+         amplitude_filter: bool = True,
+         min_amplitude: float = min_amplitude) -> None:
     """
     Parameters:
+    -----------
     dir_out: str. The directory with .nc outputs
     deltat: float. The time interval in seconds between succesive
       elevation data points
@@ -37,6 +50,10 @@ def main(dir_out: str = dir_out,
     trigger_value: int. Threshold for detecting an event
     depth_file: str. File with depth data
     filter_depth: bool. If True, skip POIs located on land
+    distance_filter: bool. If True, apply distance filter before processing
+    min_distance: float. Minimum distance from POI to fault to consider
+    amplitude_filter: bool. If True, apply amplitude filter before processing
+    min_amplitude: float. Minimum amplitude tolerance for POI to be considered
     """
     # list all output files
     files = hio.list_outputs_recursively(dir_out)
@@ -70,6 +87,14 @@ def main(dir_out: str = dir_out,
         # fault lon and lat
         flon: float = fault_info_list[0]['lon_barycenter']
         flat: float = fault_info_list[0]['lat_barycenter']
+        # If wanted, apply distance (fault<->POI) filter before 
+        # processing. All POIs with distances smaller than min_distance
+        # are masked (wont' be considered in the cropping process)
+        if filter_distance:
+            further_than_min_distance_idx = hio.get_poi_idx_within_min_distance(flat, flon, 
+                                                                                lat, lon,
+                                                                                min_distance)
+            mask_eta[:, further_than_min_distance_idx] = True
 
         # ----------------------------------------------------------------
         # 2) Compute STA/LTA for all POIs with depth < 0

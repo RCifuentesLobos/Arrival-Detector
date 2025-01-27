@@ -1,6 +1,7 @@
 import numpy as np
 import scipy as sp
 from pathlib import Path
+import greatcircle as grc
 import os
 import netCDF4 as nc
 import glob
@@ -118,6 +119,69 @@ def get_onland_indices(file: str) -> np.ndarray:
     # get indices of POIs with depth greater than 0 (i.e. on land)
     onland_indices = np.nonzero(onland)[0]
     return onland_indices
+
+# Get indices of POIs with distances smaller than min_distance. All POIs
+#  with distances smaller than min_distance, won't be considered in the
+#  cropping of the time series
+def get_poi_idx_within_min_distance(flat: np.ndarray, flon: np.ndarray,
+                                  lat: np.ndarray, lon: np.ndarray,                                  
+                                  min_distance: float) -> np.ndarray:
+    """
+    Returns the indices of the POIs with distances smalle than min_distance
+    from the fault. These POIs are not considered in the cropping
+    Parameters:
+        flat: ndarray. Fault latitudes
+        flon: ndarray. Fault longitudes
+        lat: ndarray. POI latitudes
+        lon: ndarray. POI longitudes
+        min_distance: float. Minimum distance from POI to fault to consider
+    Returns:
+        further_than_min_distance_idx: ndarray. Indices of the POIs further than
+        min_distance from the fault
+    """
+    # transform flat to ndarray
+    flat = np.array(flat)
+    flon = np.array(flon)
+    # Get number of POIs
+    npois = len(lat)
+    # get number of faults, if there's more than one
+    if flat.ndim > 1:
+        nfaults = len(flat)
+    else:
+        nfaults = 1
+    # initialize array to store distances and compute distances
+    # case where there's only one fault
+    if nfaults == 1:
+        # initialize array to store distances
+        dists_degrees = np.zeros(npois)
+        # initialize array to store indices
+        further_than_min_distance_idx = np.zeros(npois, dtype=bool)
+        for i in range(npois):
+            dists_degrees[i] = grc.distance_in_degrees(
+                lat[i], lon[i], flat, flon)
+            # check if the distance is less than the min distance
+            if dists_degrees[i] < min_distance:
+                further_than_min_distance_idx[i] = True
+    # case where there's more than one fault
+    else:
+        # initialize array to store distances
+        dists_degrees = np.zeros((npois, nfaults))
+        # initialize array to store indices
+        further_than_min_distance_idx = np.zeros((npois,nfaults), dtype=bool)
+        for f in range(nfaults):
+            for i in range(npois):
+                dists_degrees[i, f] = grc.distance_in_degrees(
+                    lat[i], lon[i], flat[f], flon[f])
+                    # check if the distance is less than the min distance
+                if dists_degrees[i, f] < min_distance:
+                    further_than_min_distance_idx[i,f] = True
+        # if at least one fault is closer than min_distance, then discard 
+        # the POI for cropping (set to True)
+        further_than_min_distance_idx = np.any(further_than_min_distance_idx, axis=1)
+    return further_than_min_distance_idx
+
+
+    
 
 
 # Create dictionaries of the attributes of the faults from global data attributes
