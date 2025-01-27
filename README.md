@@ -35,3 +35,7 @@ It outputs new .nc files with only the crucial information about the simulation 
     2. Define the time interval of the time series in deltat
     3. Define the sta/lta detection parameters
         - Default parameters are recommended
+    4. Define minimum distance in degrees within which POIs are not subject to cropping
+    5. Define minimum amplitude in meters to determine if signal is noise or no arrival is detected or if there is a measurement and crop
+After this definitions, the code will determine which signals to crop and output pkl files to save memory space.
+
