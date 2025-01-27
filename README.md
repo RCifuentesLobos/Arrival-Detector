@@ -37,5 +37,6 @@ It outputs new .nc files with only the crucial information about the simulation 
         - Default parameters are recommended
     4. Define minimum distance in degrees within which POIs are not subject to cropping
     5. Define minimum amplitude in meters to determine if signal is noise or no arrival is detected or if there is a measurement and crop
+    6. Define which filters to apply 
 After this definitions, the code will determine which signals to crop and output pkl files to save memory space.
 
