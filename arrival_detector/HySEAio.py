@@ -181,7 +181,28 @@ def get_poi_idx_within_min_distance(flat: np.ndarray, flon: np.ndarray,
     return further_than_min_distance_idx
 
 
-    
+# get the indices of POIs signals whose maximum amplitude is less than a 
+# predefined threshold
+def get_signal_amplitude_below_threshold(eta: np.ndarray,
+                                         min_amplitude: float) -> np.ndarray:
+    """
+    Returns the indices of the POIs with maximum amplitude smaller
+    than the threshold, effectively not taking inot account POIs 
+    with no registered signal
+    Parameters:
+        eta: ndarray. Elevation at the POIs
+        min_amplitude: float. Minimum amplitude threshold
+    """
+    # get number of POIs (rows are time, columns are POIs)
+    npois = eta.shape[1]
+    # initialize array to store indices
+    below_threshold_idx = np.zeros(npois, dtype=bool)
+    # loop through POIs
+    for i in range(npois):
+        # check if the maximum amplitude is below the threshold 
+        if np.max(np.abs(eta[:, i])) < min_amplitude:
+            below_threshold_idx[i] = True
+    return below_threshold_idx
 
 
 # Create dictionaries of the attributes of the faults from global data attributes

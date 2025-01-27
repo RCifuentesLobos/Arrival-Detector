@@ -24,7 +24,7 @@ min_distance: float = 10 # in degrees
 # minimum amplitude tolerance for POI to be considered (amplitude
 # in meters within which the signal is considered noise, above the 
 # threshold, it is considered a tsunami signal)
-min_amplitude: float = 0.05 # in meters
+min_amplitude: float = 0.0001 # in meters
 
 
 
@@ -37,7 +37,7 @@ def main(dir_out: str = dir_out,
          filter_depth: bool = False,
          filter_distance: bool = True,
          min_distance: float = min_distance,
-         amplitude_filter: bool = True,
+         filter_amplitude: bool = True,
          min_amplitude: float = min_amplitude) -> None:
     """
     Parameters:
@@ -60,28 +60,20 @@ def main(dir_out: str = dir_out,
     # loop through all output files
     for file in files:
         print(f'Processing {file}')
+        # ----------------------------------------------------------------
+        # 1) Read data and apply filters
+        # ----------------------------------------------------------------
         # read data
         time, lon, lat, \
             eta, mask_time, mask_lon, mask_lat, mask_eta, \
             fault_info = hio.read_outputs(file)
-        # If wanted, skip POIs located on land
+        # If wanted, skip POIs located on land. All POIs with depth 
+        # larger than 0 (on land) are masked (won't be considered
+        # in the cropping process)
         if filter_depth:
             onland_indices = hio.get_onland_indices(depth_file)
             # modify mask. If i-th column is True, that POI is masked
             mask_eta[:, onland_indices] = True
-        # get only valid data (according to mask)
-        inv_idx, valid_eta = hio.detect_invalid_values(mask_eta, eta)
-        # Get length of time series and number of valid POIs
-        timelen: int = len(time)
-        npois: int = np.shape(valid_eta)[1]
-        # get id for each individual POI.
-        # note this starts from 1, while indices from inv_idx start from 0.
-        identifiers = np.arange(1, npois + len(inv_idx) + 1)
-        # +1 to inv_idx to convert indices from 0 - npois to 1 - npois+1
-        valid_ids = identifiers[~np.isin(identifiers, inv_idx+1)]
-        valid_ids = valid_ids[:npois]
-        # get valid coordinates
-        vlon, vlat = hio.get_valid_coordinates(lon, lat, inv_idx)
         # get fault information
         fault_info_list = hio.get_fault_attributes(fault_info)
         # fault lon and lat
@@ -95,9 +87,33 @@ def main(dir_out: str = dir_out,
                                                                                 lat, lon,
                                                                                 min_distance)
             mask_eta[:, further_than_min_distance_idx] = True
+        # If wanted, apply amplitude (signal amplitude) filter before 
+        # cropping. All POIs' signal with a maximum amplitude smaller
+        # than min_amplitude are masked (wont' be considered in the 
+        # cropping)
+        if filter_amplitude:
+            no_amplitude_indices = hio.get_signal_amplitude_below_threshold(eta, min_amplitude)
+            mask_eta[:, no_amplitude_indices] = True
+        # get only valid data (according to mask)
+        inv_idx, valid_eta = hio.detect_invalid_values(mask_eta, eta)
+        # Get length of time series and number of valid POIs
+        timelen: int = len(time)
+        npois: int = np.shape(valid_eta)[1]
+        # get id for each individual POI.
+        # note this starts from 1, while indices from inv_idx start from 0.
+        identifiers = np.arange(1, npois + len(inv_idx) + 1)
+        # +1 to inv_idx to convert indices from 0 - npois to 1 - npois+1
+        valid_ids = identifiers[~np.isin(identifiers, inv_idx+1)]
+        valid_ids = valid_ids[:npois]
+        # get valid coordinates
+        vlon, vlat = hio.get_valid_coordinates(lon, lat, inv_idx)
+            
 
         # ----------------------------------------------------------------
-        # 2) Compute STA/LTA for all POIs with depth < 0
+        # 2) Compute STA/LTA for all POIs with 
+        # a) depth < 0, 
+        # b) distance > min_distance
+        # c) amplitude > min_amplitude
         # ----------------------------------------------------------------
         # initialize array with the detection values
         detection_idx = np.zeros(npois)
