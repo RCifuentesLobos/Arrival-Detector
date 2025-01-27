@@ -8,17 +8,27 @@ import copy
 import pickle
 import os
 
+# ----------------------------------------------------------------
+# A) Define directory structure
+# ----------------------------------------------------------------
 # directory with output files
 dir_out: str = "/Users/rodrigocifuentes/Documents/Alemania/Universidad/Colaboraciones/INGV/Codes/tested_codes/Testdata/alaska"
 # file containing depth data
 depth_file: str = "/Users/rodrigocifuentes/Documents/Alemania/Universidad/Colaboraciones/INGV/Codes/tested_codes/Testdata/alaska/ts_pac_0-360_wdepth.dat"
+
+# ----------------------------------------------------------------
+# B) Define STA/LTA parameters
+# ----------------------------------------------------------------
 # time interval in seconds between elevation computation
 deltat: int = 30
 # define sta/lta and detection parameters
 sta_window: int = 20
 lta_window: int = 600
 trigger_value: int = 8
-# define POI discrination criteria
+
+# ----------------------------------------------------------------
+# C) define POI discrination criteria
+# ----------------------------------------------------------------
 # minimum distance from POI to fault to consider for arrival algorithm
 min_distance: float = 10 # in degrees
 # minimum amplitude tolerance for POI to be considered (amplitude
@@ -26,18 +36,26 @@ min_distance: float = 10 # in degrees
 # threshold, it is considered a tsunami signal)
 min_amplitude: float = 0.0001 # in meters
 
-
+# ----------------------------------------------------------------
+# D) Define which filters to apply
+# ----------------------------------------------------------------
+# Filter by depth? If True, skip POIs located on land
+filter_depth: bool = False
+# Filter by distance? If True, apply distance filter before processing
+filter_distance: bool = True
+# Filter by amplitude? If True, apply amplitude filter before processing
+filter_amplitude: bool = True
 
 def main(dir_out: str = dir_out,
          deltat: float = deltat,
          sta_window: int = sta_window,
          lta_window: int = lta_window,
          trigger_value: int = trigger_value,
-         depth_file: str = None,
-         filter_depth: bool = False,
-         filter_distance: bool = True,
+         depth_file: str = depth_file,
+         filter_depth: bool = filter_depth,
+         filter_distance: bool = filter_distance,
          min_distance: float = min_distance,
-         filter_amplitude: bool = True,
+         filter_amplitude: bool = filter_amplitude,
          min_amplitude: float = min_amplitude) -> None:
     """
     Parameters:
