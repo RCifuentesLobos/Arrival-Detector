@@ -101,7 +101,10 @@ def get_better_estimate(detected_idx, estimated_idx, detection_status):
         if detection_status[i, :].all():
             final_idx[i] = d
         else:
-            final_idx[i] = max(d, e)
+            # legacy
+            #final_idx[i] = max(d, e)
+            # new experimental version
+            final_idx[i] = min(d, e)
     return final_idx
 
 
