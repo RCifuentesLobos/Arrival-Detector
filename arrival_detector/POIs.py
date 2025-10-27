@@ -3,6 +3,7 @@ import matplotlib.patches as mpatches
 import cartopy.crs as ccrs
 import cartopy.feature as GHHSFeature
 import cartopy.feature as cfeature
+from cartopy.geodesic import Geodesic
 import numpy as np
 from HySEAio import read_outputs, get_fault_attributes, detect_invalid_values
 from greatcircle import haversine, estimate_travel_time
@@ -111,4 +112,67 @@ class POIs(object):
         ax.legend(loc='best')
         plt.xlabel('Time (s)')
         plt.ylabel('Elevation (m)')
+        plt.show()
+
+    def plot_valid_and_invalid_pois(self, 
+                                    mask_eta: np.ndarray, 
+                                    min_distance_deg: float,
+                                    n_samples: int = 360):
+        """
+        Plot POIs together with a geodesic isoline of radius min_distance_deg (in
+        great-circle degrees) around every sub-fault barycenter.
+
+        Parameters
+        ----------
+        min_distance_deg : float
+            Angular radius of the isoline, expressed in arc-degrees.
+        n_samples : int, optional
+            Number of vertices used to draw each geodesic circle (default 360).
+        """
+        # initialise map (same basemap settings as plot_locations)
+        fig, ax = plt.subplots(subplot_kw={'projection': ccrs.PlateCarree(central_longitude=180)},
+                               figsize=(6, 5), dpi=200)
+        ax.stock_img()
+        ax.coastlines(zorder=1)
+        ax.set_extent([60, 340, -60, 80], crs=ccrs.PlateCarree())
+        gl = ax.gridlines(draw_labels=True, alpha=0.5, linestyle='--', color='gray')
+        gl.top_labels = False
+        gl.right_labels = False
+
+        # plot POIs
+        inv_idx, _ = detect_invalid_values(mask_eta, self.eta)
+        valid_poi = ax.scatter(np.delete(self.lon, inv_idx), np.delete(self.lat, inv_idx),
+                               s=10, marker='o', edgecolor='black', linewidth=0.2, facecolor='blue',
+                               transform=ccrs.PlateCarree(), zorder=3)
+        plt.rcParams['hatch.linewidth'] = 0.1
+        invalid_poi = ax.scatter(self.lon[inv_idx], self.lat[inv_idx],
+                                 s=10, marker='o', edgecolor='black', linewidth=0.2, facecolor='yellow',
+                                 hatch='x',
+                                 transform=ccrs.PlateCarree(), zorder=3)
+
+        # geodesic circles around each sub‑fault
+        geod = Geodesic()
+        # convert angular distance to metres on a sphere (mean Earth radius 6 371 000 m)
+        radius_m = min_distance_deg * (2 * np.pi * 6371000) / 360.0
+
+        for fault in self.faults:
+            lon0 = fault['lon_barycenter']
+            lat0 = fault['lat_barycenter']
+            # mark barycenter
+            ax.scatter(lon0, lat0, s=20, marker='s', edgecolor='black', facecolor='red',
+                       transform=ccrs.PlateCarree(), zorder=10)
+            # build circle and plot
+            circle = geod.circle(lon0, lat0, radius=radius_m, n_samples=n_samples)
+            lons, lats = zip(*circle)
+            
+            ax.plot(lons, lats, linewidth=1, color='green', transform=ccrs.Geodetic(), zorder=9)
+
+        # legend and title
+        labels = ['Fault', 'Valid POI', 'Invalid POI', f'Distance ({min_distance_deg}°)']
+        plt.legend([mpatches.Patch(facecolor='red', edgecolor='black', label='Fault'),
+                    valid_poi, invalid_poi,
+                    mpatches.Patch(facecolor='none', edgecolor='green', label=f'Isoline ({min_distance_deg}°)')],
+                   labels, loc='lower left', fancybox=True)
+        plt.title(f'POIs & {min_distance_deg}° isolines', fontsize=11)
+        plt.tight_layout()
         plt.show()

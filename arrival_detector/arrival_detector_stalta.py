@@ -8,17 +8,18 @@ import copy
 import pickle
 import os
 
-# ----------------------------------------------------------------
+# ------------------------------------------------------------------------
 # A) Define directory structure
-# ----------------------------------------------------------------
+# ------------------------------------------------------------------------
 # directory with output files
-dir_out: str = "/Users/rodrigocifuentes/Documents/Alemania/Universidad/Colaboraciones/INGV/Codes/tested_codes/Testdata/alaska"
+#dir_out: str = "/Users/rodrigocifuentes/Documents/Alemania/Universidad/Colaboraciones/INGV/Codes/tested_codes/Testdata/alaska"
+dir_out: str = "/Users/rodrigocifuentes/Documents/Alemania/Universidad/Colaboraciones/INGV/Codes/tested_codes/arrival_detector"
 # file containing depth data
-depth_file: str = "/Users/rodrigocifuentes/Documents/Alemania/Universidad/Colaboraciones/INGV/Codes/tested_codes/Testdata/alaska/ts_pac_0-360_wdepth.dat"
-
-# ----------------------------------------------------------------
+#depth_file: str = "/Users/rodrigocifuentes/Documents/Alemania/Universidad/Colaboraciones/INGV/Codes/tested_codes/Testdata/alaska/ts_pac_0-360_wdepth.dat"
+depth_file: str = "/Users/rodrigocifuentes/Documents/Alemania/Universidad/Colaboraciones/INGV/Codes/tested_codes/arrival_detector/ts_pac_first_depth.dat"
+# ------------------------------------------------------------------------
 # B) Define STA/LTA parameters
-# ----------------------------------------------------------------
+# ------------------------------------------------------------------------
 # time interval in seconds between elevation computation
 deltat: int = 30
 # define sta/lta and detection parameters
@@ -26,25 +27,32 @@ sta_window: int = 20
 lta_window: int = 600
 trigger_value: int = 8
 
-# ----------------------------------------------------------------
+# ------------------------------------------------------------------------
 # C) define POI discrination criteria
-# ----------------------------------------------------------------
+# ------------------------------------------------------------------------
 # minimum distance from POI to fault to consider for arrival algorithm
-min_distance: float = 10 # in degrees
+min_distance: float = 25 # in degrees
 # minimum amplitude tolerance for POI to be considered (amplitude
 # in meters within which the signal is considered noise, above the 
 # threshold, it is considered a tsunami signal)
-min_amplitude: float = 0.0001 # in meters
+min_amplitude: float = 0.000001 # in meters
 
-# ----------------------------------------------------------------
+# ------------------------------------------------------------------------
 # D) Define which filters to apply
-# ----------------------------------------------------------------
+# ------------------------------------------------------------------------
 # Filter by depth? If True, skip POIs located on land
 filter_depth: bool = False
 # Filter by distance? If True, apply distance filter before processing
-filter_distance: bool = True
+# This filters makes that all time series of POIs within certain range
+# are NOT cropped. This is done by setting the arrival time at 0
+filter_distance: bool = False
 # Filter by amplitude? If True, apply amplitude filter before processing
 filter_amplitude: bool = True
+
+# ------------------------------------------------------------------------
+# E) set verbosity level
+# ------------------------------------------------------------------------
+verbose: bool = True
 
 def main(dir_out: str = dir_out,
          deltat: float = deltat,
@@ -56,22 +64,34 @@ def main(dir_out: str = dir_out,
          filter_distance: bool = filter_distance,
          min_distance: float = min_distance,
          filter_amplitude: bool = filter_amplitude,
-         min_amplitude: float = min_amplitude) -> None:
+         min_amplitude: float = min_amplitude,
+         verbose: bool = verbose) -> None:
     """
     Parameters:
     -----------
-    dir_out: str. The directory with .nc outputs
-    deltat: float. The time interval in seconds between succesive
-      elevation data points
-    sta_window: int. The length of the STA window
-    lta_window: int. The length of the LTA window
-    trigger_value: int. Threshold for detecting an event
-    depth_file: str. File with depth data
-    filter_depth: bool. If True, skip POIs located on land
-    distance_filter: bool. If True, apply distance filter before processing
-    min_distance: float. Minimum distance from POI to fault to consider
-    amplitude_filter: bool. If True, apply amplitude filter before processing
-    min_amplitude: float. Minimum amplitude tolerance for POI to be considered
+    dir_out : str, 
+        The directory with .nc outputs
+    deltat : float, 
+        The time interval in seconds between succesive
+        elevation data points
+    sta_window : int, 
+        The length of the STA window
+    lta_window : int, 
+        The length of the LTA window
+    trigger_value : int, 
+        Threshold for detecting an event
+    depth_file : str, 
+        File with depth data
+    filter_depth : bool, 
+        If True, skip POIs located on land
+    distance_filter : bool, 
+        If True, apply distance filter before processing
+    min_distance : float, 
+        Minimum distance from POI to fault to consider
+    amplitude_filter : bool,
+        If True, apply amplitude filter before processing
+    min_amplitude : float, 
+        Minimum amplitude tolerance for POI to be considered
     """
     # list all output files
     files = hio.list_outputs_recursively(dir_out)
@@ -85,6 +105,8 @@ def main(dir_out: str = dir_out,
         time, lon, lat, \
             eta, mask_time, mask_lon, mask_lat, mask_eta, \
             fault_info = hio.read_outputs(file)
+        # get total number of POIs
+        total_pois = np.shape(eta)[1]
         # If wanted, skip POIs located on land. All POIs with depth 
         # larger than 0 (on land) are masked (won't be considered
         # in the cropping process)
@@ -99,28 +121,49 @@ def main(dir_out: str = dir_out,
         flat: float = fault_info_list[0]['lat_barycenter']
         # If wanted, apply distance (fault<->POI) filter before 
         # processing. All POIs with distances smaller than min_distance
-        # are masked (wont' be considered in the cropping process)
+        # won't be cropped
         if filter_distance:
-            further_than_min_distance_idx = hio.get_poi_idx_within_min_distance(flat, flon, 
-                                                                                lat, lon,
-                                                                                min_distance)
-            mask_eta[:, further_than_min_distance_idx] = True
+            # initialize boolean array to identify those POIs within 
+            # min_distance that won't be cropped
+            is_poi_within = np.zeros((total_pois), dtype=np.bool_)
+            # get indices of POIs within min_distance from a fault
+            within_poi_idx = hio.get_poi_idx_within_min_distance(flat, flon, 
+                                                                 lat, lon,
+                                                                 min_distance)
+            # True if POI is within range of min_distance
+            is_poi_within[within_poi_idx] = True
         # If wanted, apply amplitude (signal amplitude) filter before 
         # cropping. All POIs' signal with a maximum amplitude smaller
         # than min_amplitude are masked (wont' be considered in the 
         # cropping)
         if filter_amplitude:
-            no_amplitude_indices = hio.get_signal_amplitude_below_threshold(eta, min_amplitude)
+            no_amplitude_indices = hio.get_signal_amplitude_below_threshold(eta, 
+                                                                            min_amplitude)
             mask_eta[:, no_amplitude_indices] = True
+        # get all ids (starting from zero) of valid and invalid POIs
+        # note: invalid POIs are masked as True in mask
+        all_ids = np.any(mask_eta, axis=0)
+        # print invalid pois
+        if verbose:
+            n_inv_pois = np.sum(all_ids)
+            print(f"Number of invalid POIs not considered: {n_inv_pois}")
         # get only valid data (according to mask)
+        # valid_eta has dimensions (timelen, Total # POIs - masked POIs) 
         inv_idx, valid_eta = hio.detect_invalid_values(mask_eta, eta)
         # Get length of time series and number of valid POIs
         timelen: int = len(time)
+        # number of valid POIs (without True values in mask_eta)
         npois: int = np.shape(valid_eta)[1]
+        if verbose:
+            print(f"Number of valid POIs considered: {npois}") 
         # get id for each individual POI.
         # note this starts from 1, while indices from inv_idx start from 0.
         identifiers = np.arange(1, npois + len(inv_idx) + 1)
         # +1 to inv_idx to convert indices from 0 - npois to 1 - npois+1
+        # e.g. element 1720 is masked in mask_eta:
+        # in identifiers this will correspond to 1721. This idx will not
+        # be in valid_ids, so: 
+        # valid_ids[1718:1722] = array([1719, 1720, 1722, 1723])
         valid_ids = identifiers[~np.isin(identifiers, inv_idx+1)]
         valid_ids = valid_ids[:npois]
         # get valid coordinates
@@ -149,7 +192,7 @@ def main(dir_out: str = dir_out,
         # ----------------------------------------------------------------
         # initialize the boolean array
         nborders: int = 3
-        detection_status = np.zeros((len(detection_idx), nborders), dtype=bool)
+        detection_status = np.zeros((len(detection_idx), nborders), dtype=np.bool_)
         # loop through all detections
         for i, idx in enumerate(detection_idx):
             detection_status[i, :] = du.check_arrival_detection(valid_eta[:, i],
@@ -203,7 +246,18 @@ def main(dir_out: str = dir_out,
                 final_idx[i] = du.correct_detection(
                     valid_eta[:, i], final_idx[i], movement=2)
         # ----------------------------------------------------------------
-        # 8) Crops the elevation time series eliminating the leading zeros
+        # 8) Sets arrival index to 0 if POI is within min_distance
+        # ----------------------------------------------------------------
+        # For all valid_ids (note: they start at 1) it checks whether the
+        # POI is within min_distance of any subfault. If it is, it sets 
+        # the arrival index to zero. This guarantees that this time series
+        # is not cropped
+        for idx, val_ids in enumerate(valid_ids):
+            if is_poi_within[val_ids - 1]:
+                final_idx[idx] = 0
+
+        # ----------------------------------------------------------------
+        # 9) Crops the elevation time series eliminating the leading zeros
         # up until the arrival index. It saves the time series to a
         # dictionary to save it to a pickle file
         # ----------------------------------------------------------------
@@ -211,8 +265,15 @@ def main(dir_out: str = dir_out,
         # a .pkl file
         # initialize the dictionary
         cropped_time_series = {}
-        # number of POIs
+        # number of (valid) POIs
         cropped_time_series['npois'] = npois
+        # validity of all POIs (True: valid, False: invalid)
+        # note: starts from zero! as per the previous example:
+        # if 1720 is invalid, the idx 1720 will be False
+        # all_ids has to be bool
+        if all_ids.dtype != np.bool_:
+            all_ids = np.array(all_ids, dtype=bool)
+        cropped_time_series['all_valid_pois'] = ~all_ids
         # save time data
         cropped_time_series['start_time'] = time[0]
         cropped_time_series['end_time'] = time[-1]
@@ -250,7 +311,8 @@ def main(dir_out: str = dir_out,
         pklfilename = os.path.join(pklpath, pklfilename)
         with open(pklfilename, 'wb') as pklfile:
             pickle.dump(cropped_time_series, pklfile)
-        print(f'{file} done!')
+        if verbose:
+            print(f'{file} done!')
 
 
 if __name__ == '__main__':

@@ -6,10 +6,15 @@ import os
 import netCDF4 as nc
 import glob
 import pickle
+from typing import Dict, Any, Tuple, List
 
 
 # List data files
-def list_outputs(directory: str, extension: str = '.nc'):
+def list_outputs(directory: str, 
+                 extension: str='.nc') -> List[str]:
+    """
+    List all files with extension in directory
+    """
     # Extension needs to start with a point
     if not extension.startswith('.'):
         extension = '.' + extension
@@ -21,7 +26,8 @@ def list_outputs(directory: str, extension: str = '.nc'):
 
 
 # List data files from all subdirectories in a directory
-def list_outputs_recursively(directory: str, name: str = 'out_ts.nc'):
+def list_outputs_recursively(directory: str, 
+                             name: str='out_ts.nc') -> List[str]:
     """
     List all output files of names name in directories recursively
     """
@@ -34,18 +40,27 @@ def list_outputs_recursively(directory: str, name: str = 'out_ts.nc'):
 
 
 # Read data files
-def read_outputs(output: str, ):
+def read_outputs(output: str):
     """
     Reads the HySEA output data
     Parameters:
-        output: string. HySEA output file
+    ----------
+    output : str, 
+            HySEA output file
     Returns:
-        time: ndarray: times at which the data is saved
-        lon: ndarray: longitudes of the POIs
-        lat: ndarray: latitudes of the POIs
-        eta: ndarray: Elevation at the POIs 
-        mask_*: boolean array of maks values for * array
-        fault_info: Dictionary with information about the fault
+    -------
+    time : np.ndarray, 
+        times at which the data is saved
+    lon : np.ndarray, 
+        longitudes of the POIs
+    lat : np.ndarray, 
+        latitudes of the POIs
+    eta : np.ndarray, 
+        Elevation at the POIs 
+    mask_*: np.ndarray, 
+        boolean array of maks values for * array
+    fault_info: dict, 
+        Dictionary with information about the fault
     """
     data = nc.Dataset(output, 'r')
     # get global attributes
@@ -89,13 +104,17 @@ def read_outputs(output: str, ):
 
 
 # read depth of POI locations
-def read_depth(file: str, ) -> np.ndarray:
+def read_depth(file: str) -> np.ndarray:
     """
     Reads the (lon,lat,depth) coordinates of POI locations
     Parameters:
-        output: string. POI locations
+    ----------
+    output : str, 
+            POI locations
     Returns:
-        onland: ndarray. Boolean value indicating whether the fault is 
+    -------
+    onland : np.ndarray, 
+        Boolean value indicating whether the fault is 
         in the ocean (0) or on land (1)
     """
     locs = np.genfromtxt(file)
@@ -104,15 +123,17 @@ def read_depth(file: str, ) -> np.ndarray:
     return onland
 
 # get indices of POIs with depth greater than 0 (i.e. on land)
-
-
 def get_onland_indices(file: str) -> np.ndarray:
     """
     Returns the indices of the POIs with depth greater than 0
     Parameters:
-        file: string. File containing POI locations (lon,lat,depth) coords
+    ----------
+    file : str, 
+        File containing POI locations (lon,lat,depth) coords
     Returns:
-        onland_indices: ndarray. Indices of the POIs on land
+    -------
+    onland_indices : np.ndarray, 
+        Indices of the POIs on land
     """
     # read depth of POI locations
     onland = read_depth(file)
@@ -124,20 +145,27 @@ def get_onland_indices(file: str) -> np.ndarray:
 #  with distances smaller than min_distance, won't be considered in the
 #  cropping of the time series
 def get_poi_idx_within_min_distance(flat: np.ndarray, flon: np.ndarray,
-                                  lat: np.ndarray, lon: np.ndarray,                                  
-                                  min_distance: float) -> np.ndarray:
+                                    lat: np.ndarray, lon: np.ndarray,                                  
+                                    min_distance: float) -> np.ndarray:
     """
     Returns the indices of the POIs with distances smalle than min_distance
     from the fault. These POIs are not considered in the cropping
     Parameters:
-        flat: ndarray. Fault latitudes
-        flon: ndarray. Fault longitudes
-        lat: ndarray. POI latitudes
-        lon: ndarray. POI longitudes
-        min_distance: float. Minimum distance from POI to fault to consider
+    ----------
+    flat : np.ndarray, 
+            Fault latitudes
+    flon : np.ndarray, 
+        Fault longitudes
+    lat : np.ndarray, 
+        POI latitudes
+    lon : np.ndarray, 
+        POI longitudes
+    min_distance : float, 
+        Minimum distance from POI to fault to consider
     Returns:
-        further_than_min_distance_idx: ndarray. Indices of the POIs further than
-        min_distance from the fault
+    -------
+    further_than_min_distance_idx : np.ndarray, 
+        Indices of the POIs further than min_distance from the fault
     """
     # transform flat to ndarray
     flat = np.array(flat)
@@ -181,17 +209,91 @@ def get_poi_idx_within_min_distance(flat: np.ndarray, flon: np.ndarray,
     return further_than_min_distance_idx
 
 
+# Get indices of POIs with distances bigger than min_distance. All POIs
+#  with distances bigger than min_distance, won't be considered in the
+#  cropping of the time series
+def get_poi_idx_outside_min_distance(flat: np.ndarray, flon: np.ndarray,
+                                    lat: np.ndarray, lon: np.ndarray,                                  
+                                    min_distance: float) -> np.ndarray:
+    """
+    Returns the indices of the POIs with distances bigger than min_distance
+    from the fault. These POIs are not considered in the cropping
+    Parameters:
+    ----------
+    flat : np.ndarray, 
+            Fault latitudes
+    flon : np.ndarray, 
+        Fault longitudes
+    lat : np.ndarray, 
+        POI latitudes
+    lon : np.ndarray, 
+        POI longitudes
+    min_distance : float, 
+        Minimum distance from POI to fault to consider
+    Returns:
+    -------
+    within_than_min_distance_idx : np.ndarray, 
+        Indices of the POIs further than min_distance from the fault
+    """
+    # transform flat to ndarray
+    flat = np.array(flat)
+    flon = np.array(flon)
+    # Get number of POIs
+    npois = len(lat)
+    # get number of faults, if there's more than one
+    if flat.ndim > 1:
+        nfaults = len(flat)
+    else:
+        nfaults = 1
+    # initialize array to store distances and compute distances
+    # case where there's only one fault
+    if nfaults == 1:
+        # initialize array to store distances
+        dists_degrees = np.zeros(npois)
+        # initialize array to store indices
+        less_than_min_distance_idx = np.zeros(npois, dtype=bool)
+        for i in range(npois):
+            dists_degrees[i] = grc.distance_in_degrees(
+                lat[i], lon[i], flat, flon)
+            # check if the distance is bigger than the min distance
+            if dists_degrees[i] > min_distance:
+                less_than_min_distance_idx[i] = True
+    # case where there's more than one fault
+    else:
+        # initialize array to store distances
+        dists_degrees = np.zeros((npois, nfaults))
+        # initialize array to store indices
+        less_than_min_distance_idx = np.zeros((npois,nfaults), dtype=bool)
+        for f in range(nfaults):
+            for i in range(npois):
+                dists_degrees[i, f] = grc.distance_in_degrees(
+                    lat[i], lon[i], flat[f], flon[f])
+                    # check if the distance is bigger than the min distance
+                if dists_degrees[i, f] > min_distance:
+                    less_than_min_distance_idx[i,f] = True
+        # if at least one fault is further than min_distance, then discard 
+        # the POI for cropping (set to True)
+        less_than_min_distance_idx = np.any(less_than_min_distance_idx, axis=1)
+    return less_than_min_distance_idx
+
 # get the indices of POIs signals whose maximum amplitude is less than a 
 # predefined threshold
 def get_signal_amplitude_below_threshold(eta: np.ndarray,
                                          min_amplitude: float) -> np.ndarray:
     """
     Returns the indices of the POIs with maximum amplitude smaller
-    than the threshold, effectively not taking inot account POIs 
+    than the threshold, effectively not taking into account POIs 
     with no registered signal
     Parameters:
-        eta: ndarray. Elevation at the POIs
-        min_amplitude: float. Minimum amplitude threshold
+    ----------
+    eta : np.ndarray, 
+        Elevation at the POIs
+    min_amplitude : float, 
+        Minimum amplitude threshold
+    Returns:
+    -------
+    below_threshold_idx : np.ndarray,
+        array of POI indices whose max amplitudes are below min_amplitude
     """
     # get number of POIs (rows are time, columns are POIs)
     npois = eta.shape[1]
@@ -209,14 +311,25 @@ def get_signal_amplitude_below_threshold(eta: np.ndarray,
 def get_fault_attributes(fault_info: dict) -> list:
     """
     Creates dictionaries with data from the faults used in the simulation
-    Parameters: dict. A dictionary with a key of the form 'fault_n' and values as
-    time: 0.00, lon_barycenter: 288.92, lat_barycenter: -19.43, rake: 90.00, slip: 10.00
-    Returns: list[dict]. With keys:
-        time
-        lon_barycenter
-        lat_barycenter
-        rake
-        slip
+    Parameters:
+    ----------
+    fault_info : dict, 
+        A dictionary with a key of the form 'fault_n' and values
+        in the format:
+            time: 0.00, 
+            lon_barycenter: 288.92, 
+            lat_barycenter: -19.43, 
+            rake: 90.00, 
+            slip: 10.00
+    Returns: 
+    -------
+    fault_attributes_list : list[dict], 
+        Dictionary with keys:
+            time
+            lon_barycenter
+            lat_barycenter
+            rake
+            slip
     """
     # initialize list
     fault_attributes_list = []
@@ -230,7 +343,9 @@ def get_fault_attributes(fault_info: dict) -> list:
 
 
 # Detect and return only valid POI elevation time series
-def detect_invalid_values(mask: np.ndarray, eta: np.ndarray):
+def detect_invalid_values(mask: np.ndarray, 
+                          eta: np.ndarray) -> Tuple[np.ndarray,
+                                                    np.ndarray]:
     """
     Detects the invalid maksed elements. Elevation data eta has
     dimensions (time, nPOIs). Invalid data is located in some 
@@ -238,11 +353,17 @@ def detect_invalid_values(mask: np.ndarray, eta: np.ndarray):
     index of this(these) column(s) is the index of the POI with
     invalid values
     Parameters:
-    mask: np.ndarray. Mask of eta
-    eta: np.ndarray. Elevation array
+    ----------
+    mask : np.ndarray, 
+        Mask of eta
+    eta : np.ndarray, 
+        Elevation array
     Returns:
-    inv_idx: np.ndarray. Indices of invalid values
-    masked_eta: np.ndarray. Elevation matrix without invalid data
+    -------
+    inv_idx : np.ndarray, 
+        Indices of invalid values
+    masked_eta : np.ndarray, 
+        Elevation matrix without invalid data
     """
     # indices of the column of True values
     inv_idx = np.where(mask.any(axis=0))[0]
@@ -251,7 +372,10 @@ def detect_invalid_values(mask: np.ndarray, eta: np.ndarray):
 
 
 # Returns the latitude and longitude of the valid POIs
-def get_valid_coordinates(lon: float, lat: float, idx: int):
+def get_valid_coordinates(lon: float, 
+                          lat: float, 
+                          idx: int) -> Tuple[np.ndarray,
+                                             np.ndarray]:
     """
     Returns the coordinates where there are valid data entries
 
@@ -262,12 +386,16 @@ def get_valid_coordinates(lon: float, lat: float, idx: int):
 
 
 # Saves the calculated index to a nc file
-def write_output(output: str, index_out: np.ndarray) -> None:
+def write_output(output: str, 
+                 index_out: np.ndarray) -> None:
     """
     Saves the calculated arrival indices to an output nc file
     Parameters:
-    output: str. Name of the output nc file
-    index_out: np.ndarray. Array of the indices
+    ----------
+    output : str, 
+        Name of the output nc file
+    index_out : np.ndarray, 
+        Array of the indices
     """
     data_write = nc.Dataset(output, 'a')
     time_idx = data_write.createVariable(
@@ -277,19 +405,24 @@ def write_output(output: str, index_out: np.ndarray) -> None:
 
 
 # load pickle data
-def load_pickle_elevation(filename: str, ret_all: bool = False):
+def load_pickle_elevation(filename: str, 
+                          ret_all: bool = False):
     """
     Loads the pickle file data and rebuilds the time series
     Parameters:
-    filename: str. Name of the pickle file
-    ret_all: bool. Flag for returning the whole data dict or not.
+    ----------
+    filename: str,
+        Name of the pickle file
+    ret_all: bool,
+        Flag for returning the whole data dict or not.
         Defaults to False, not returning the whole dictionary
     """
     # load data
     with open(filename, 'rb') as file:
         data = pickle.load(file)
-    # 0) retrieve valid ids
+    # 0) retrieve valid ids and all valid pois in boolean dtype
     valid_ids = data['valid_ids']
+    all_ids = data['all_valid_pois']
     # rebuild data and time series
     # 1) rebuild time array
     # initial time
@@ -340,7 +473,7 @@ def load_pickle_elevation(filename: str, ret_all: bool = False):
     # if ret_all is True returns everything
     if ret_all:
         return data, time, crop_times, lon, lat, eta, \
-            max_amp, max_elev, time_max_amp, time_max_elev, valid_ids
+            max_amp, max_elev, time_max_amp, time_max_elev, valid_ids, all_ids
     else:
         return time, crop_times, lon, lat, eta
 
@@ -350,15 +483,17 @@ def pickle2nc(filename: str) -> None:
     """
     Transforms a pickle file into a netcdf format
     Parameters:
-    filename: str. Name of the pickle file
+    ----------
+    filename: str,
+        Name of the pickle file
     """
     # 1) load pickle data
-    # TODO: update new variables (max amp, max elev, time max amp, time max elev)
+    # TODO: update new variables all_ids "valid_pois"
     data, time, crop_time, lon, lat, eta, \
         max_amp, max_elev, \
         time_max_amp, time_max_elev, \
-        valid_ids = load_pickle_elevation(
-            filename, ret_all=True)
+        valid_ids, all_ids = load_pickle_elevation(
+                             filename, ret_all=True)
     npois = data['npois']
     # 2) create nc file
     # 2.1) nc file name
@@ -380,6 +515,8 @@ def pickle2nc(filename: str) -> None:
     timemaxdime = nc_file.createDimension('timemax', len(time_max_amp))
     # 3.7) for all valid identifiers of POIs
     valididdim = nc_file.createDimension('valid_id', len(valid_ids))
+    # 3.8) for all boolean POI indices of validity
+    alliddim = nc_file.createDimension('all_id', len(all_ids))
     # 4) create variables
     # 4.1) for time
     time_var = nc_file.createVariable('time', np.float32, ('time',))
@@ -393,9 +530,9 @@ def pickle2nc(filename: str) -> None:
         'crop_time', np.float32, ('crop_time',))
     # 4.5) for max amp and max elevations
     max_amp_var = nc_file.createVariable(
-        'max_elevation', np.float32, ('npois',))
-    max_elev_var = nc_file.createVariable(
         'max_amplitude', np.float32, ('npois',))
+    max_elev_var = nc_file.createVariable(
+        'max_elevation', np.float32, ('npois',))
     # 4.6) for arrival times of amplitude and elevations
     max_amp_time_var = nc_file.createVariable(
         'max_tsunami_amplitude_time', np.float32, ('npois',))
@@ -403,6 +540,9 @@ def pickle2nc(filename: str) -> None:
         'max_tsunami_elevation_time', np.float32, ('npois',))
     # 4.7) for all valid identifiers of POIs
     valid_ids_var = nc_file.createVariable('valid_ids', np.int32, ('npois',))
+    # 4.8) for all indices of validity for POIs
+    all_ids_var = nc_file.createVariable('all_ids', 'i1', ('all_id',))
+    all_ids_var.units = 'boolean (1=True, 0=False)'
     # 5) assign values to variable
     # 5.1) for time
     time_var[:] = time
@@ -421,5 +561,7 @@ def pickle2nc(filename: str) -> None:
     max_elev_time_var[:] = time_max_elev
     # 5.7) for all valid identifiers of POIs
     valid_ids_var[:] = valid_ids
+    # 5.8) for all indices
+    all_ids_var[:] = all_ids.astype('i1')
     # close nc file
     nc_file.close()
