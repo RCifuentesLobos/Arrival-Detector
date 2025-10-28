@@ -1,5 +1,5 @@
 
-# Arrival_detector
+# Arrival-Detector
 
 Codes for detecting the wave arrival for .nc files outputs from HySEA
 
