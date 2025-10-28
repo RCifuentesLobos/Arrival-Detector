@@ -11,14 +11,42 @@ It also contains codes for checking the detection and correcting it in case that
 
 It loops through all .nc files in a given directory. If the main directory given as input contains more directories, it loops through all subdirectories looking for .nc files to be processed.  
 
-It outputs new .nc files with only the crucial information about the simulation saved.
+It outputs compressed pickle files with only non-zero elevation arrays.
 
-### File description
+## Repository layout
 
-1. arrival_detector.py and arrival_detector_stalta.py
+```text
+Arrival-Detector
+│
+├── README.md                                                ← Documentation 
+│
+├── arrival_detector/                                        ← Main directory
+│  │
+│  ├── __init__.py
+│  ├── arrival_detector_stalta.py                            ← Main code
+│  ├── arrival_detector_stalta_mercalli_failsafe.py          ← Non-up-to-date version with command-line parsers
+│  ├── HySEAio.py                                            ← i/o functions for HySEA files
+│  ├── greatcircle.py                                        ← Geodetic functions
+│  ├── POIs.py                                               ← Define POI class
+│  ├── detectutils.py                                        ← Detection functions
+│  │
+│  └── old/                                                  ← Old, legacy codes
+│       ├── detecutils.py 
+│       ├── arrivals.py
+│       ├── arrivals_tt_first.py
+│       └── arrival_detector.py      
+│
+└── Tests/                                                   ← Test directory with non-up-to-date codes
+    ├── arrival_detector_stalta_mercalli.py
+    ├── arrival_detector_stalta_mercalli_test.py
+    └── arrival_detector_stalta_mercalli_test_failsafe.py
+```
+
+### Main files description
+
+1. arrival_detector_stalta.py
     - Main functions for looping through simulation outputs detecting arrivals and cropping elevation time series.
-        - arrival_detector.py checks first the travel-time estimation and then corrects it with STA/LTA detection. It's slower than arrival_detector_stalta.py and not recommended.
-        - arrival_detector_stalta.py performs an sta/lta wave picking and complements incorrectly detected waves with travel-time estimations detections. We recommend the use of this function.
+        - arrival_detector_stalta.py performs an sta/lta wave picking and complements incorrectly detected waves with travel-time estimations detections.
 2. HySEAio.py
     - Contains functions for reading and writing .nc files and pickle files
 3. greatcircle.py
@@ -28,17 +56,10 @@ It outputs new .nc files with only the crucial information about the simulation 
 5. detectutils.py  
     - contains functions for the detection, checking and correction of wave arrivals, as well as cropping the time series
 
-### How to use the main functions (arrival_detector_stalta.py is recommended)
+### How to use the main function arrival_detector_stalta.py
 
-- In arrival_detector_stalta.py:
-    1. Define the directory with the outputs in dir_out
-    2. Define the time interval of the time series in deltat
-    3. Define the sta/lta detection parameters
-        - Default parameters are recommended
-    4. Define minimum distance in degrees within which POIs are not subject to cropping
-    5. Define minimum amplitude in meters to determine if signal is noise or no arrival is detected or if there is a measurement and crop
-    6. Define which filters to apply 
-
-
-After these definitions, the code will determine which signals to crop and output pkl files to save memory space.
+1. Define the directory with the outputs in dir_out
+2. Define the time interval of the time series in deltat
+3. Define the sta/lta detection parameters
+    - Default parameters are recommended
 
