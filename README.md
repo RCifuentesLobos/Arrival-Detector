@@ -62,4 +62,7 @@ Arrival-Detector
 2. Define the time interval of the time series in deltat
 3. Define the sta/lta detection parameters
     - Default parameters are recommended
+4. Define POI discrimination criteria
+5. Define which filters to apply
+6. Set verbosity level
 
