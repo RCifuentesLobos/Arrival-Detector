@@ -36,6 +36,10 @@ class POIs(object):
     def plot_locations(self, plotdistance: bool = False):
         """
         Creates a map of the location of the POIs
+        Parameters:
+        ----------
+        plotdistance : bool
+            If True, the POIs are colored according to their distance to the first fault
         """
         # initialize map
         fig, ax = plt.subplots(subplot_kw={'projection': ccrs.PlateCarree(central_longitude=180)},
@@ -124,6 +128,8 @@ class POIs(object):
 
         Parameters
         ----------
+        mask_eta : np.ndarray
+            Mask array for the elevation data (True for invalid values).
         min_distance_deg : float
             Angular radius of the isoline, expressed in arc-degrees.
         n_samples : int, optional
