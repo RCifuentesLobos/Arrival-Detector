@@ -32,16 +32,14 @@ trigger_value: int = 8
 # ------------------------------------------------------------------------
 # minimum distance from POI to fault to consider for arrival algorithm
 min_distance: float = 25 # in degrees
-# minimum amplitude tolerance for POI to be considered (amplitude
-# in meters within which the signal is considered noise, above the 
-# threshold, it is considered a tsunami signal)
-min_amplitude: float = 0.000001 # in meters
 
 # ------------------------------------------------------------------------
 # D) Define which filters to apply
 # ------------------------------------------------------------------------
 # Filter by depth? If True, skip POIs located on land
 filter_depth: bool = False
+# depth value (in meters) to consider as coast
+coast_value: float = -1 
 # Filter by distance? If True, apply distance filter before processing
 # This filters makes that all time series of POIs within certain range
 # are NOT cropped. This is done by setting the arrival time at 0
@@ -61,10 +59,10 @@ def main(dir_out: str = dir_out,
          trigger_value: int = trigger_value,
          depth_file: str = depth_file,
          filter_depth: bool = filter_depth,
+         coast_value: float | None = coast_value,
          filter_distance: bool = filter_distance,
          min_distance: float = min_distance,
          filter_amplitude: bool = filter_amplitude,
-         min_amplitude: float = min_amplitude,
          verbose: bool = verbose) -> None:
     """
     Parameters:
@@ -84,36 +82,51 @@ def main(dir_out: str = dir_out,
         File with depth data
     filter_depth : bool, 
         If True, skip POIs located on land
+    coast_value : float | None,
+        Depth value (in meters) to consider as coast
     distance_filter : bool, 
         If True, apply distance filter before processing
     min_distance : float, 
         Minimum distance from POI to fault to consider
-    amplitude_filter : bool,
+    filter_amplitude : bool,
         If True, apply amplitude filter before processing
-    min_amplitude : float, 
-        Minimum amplitude tolerance for POI to be considered
+    verbose : bool, 
+        If True, print information during processing
     """
     # list all output files
     files = hio.list_outputs_recursively(dir_out)
     # loop through all output files
     for file in files:
-        print(f'Processing {file}')
+        print(f'[Info] Processing {file}')
         # ----------------------------------------------------------------
         # 1) Read data and apply filters
         # ----------------------------------------------------------------
         # read data
         time, lon, lat, \
-            eta, mask_time, mask_lon, mask_lat, mask_eta, \
+            eta, _, _, _, mask_eta, \
             fault_info = hio.read_outputs(file)
         # get total number of POIs
         total_pois = np.shape(eta)[1]
+        # get original amount of invalid POIs
+        n_invalid_pois = np.sum(np.any(mask_eta, axis=0))
+        if verbose:
+            print(f"[Info] Total number of POIs: {total_pois}")
+            print(f"[Info] Number of invalid POIs before filtering: {n_invalid_pois}")
         # If wanted, skip POIs located on land. All POIs with depth 
         # larger than 0 (on land) are masked (won't be considered
         # in the cropping process)
         if filter_depth:
-            onland_indices = hio.get_onland_indices(depth_file)
+            if verbose:
+                print(f"[Filter] Applying depth filter:\n", 
+                      f"Skipping POIs located on land. Coastline depth threshold: {coast_value} (m)")
+            if coast_value is None:
+                coast_value = 0
+            onland_indices = hio.get_onland_indices(depth_file,
+                                                    coast_value=coast_value)
             # modify mask. If i-th column is True, that POI is masked
             mask_eta[:, onland_indices] = True
+            if verbose:
+                print(f"[Filter] Filtered {len(onland_indices)} POIs located on land")
         # get fault information
         fault_info_list = hio.get_fault_attributes(fault_info)
         # fault lon and lat
@@ -122,31 +135,45 @@ def main(dir_out: str = dir_out,
         # If wanted, apply distance (fault<->POI) filter before 
         # processing. All POIs with distances smaller than min_distance
         # won't be cropped
+        # initialize boolean array to identify those POIs within 
+        # min_distance that won't be cropped
+        is_poi_within = np.zeros((total_pois), dtype=np.bool_)
         if filter_distance:
-            # initialize boolean array to identify those POIs within 
-            # min_distance that won't be cropped
-            is_poi_within = np.zeros((total_pois), dtype=np.bool_)
+            if verbose:
+                print(f"[Filter] Applying distance filter\n:",
+                      f" skipping POIs within {min_distance} degrees from fault")
             # get indices of POIs within min_distance from a fault
             within_poi_idx = hio.get_poi_idx_within_min_distance(flat, flon, 
                                                                  lat, lon,
                                                                  min_distance)
             # True if POI is within range of min_distance
             is_poi_within[within_poi_idx] = True
+            if verbose:
+                print(f"[Filter] Filtered {len(within_poi_idx)}", 
+                      f"POIs within {min_distance} degrees from fault")
         # If wanted, apply amplitude (signal amplitude) filter before 
         # cropping. All POIs' signal with a maximum amplitude smaller
-        # than min_amplitude are masked (wont' be considered in the 
-        # cropping)
+        # than val/(depth)**0.25 are masked (wont' be considered in the 
+        # cropping). val is by default 0.05 (see helper function 
+        # _get_poi_threshold() in HySEAio.py)
         if filter_amplitude:
-            no_amplitude_indices = hio.get_signal_amplitude_below_threshold(eta, 
-                                                                            min_amplitude)
+            if verbose:
+                print(f"[Filter] Applying amplitude filter")
+            no_amplitude_indices = hio.get_signal_amplitude_below_greenslaw(eta,
+                                                                           depth_file,
+                                                                           coast_value=coast_value)
+            # modify mask. If i-th column is True, that POI is masked
             mask_eta[:, no_amplitude_indices] = True
+            if verbose:
+                print(f"[Filter] Filtered {len(np.argwhere(no_amplitude_indices))}",
+                      "POIs with amplitude below threshold given by Green's Law")
         # get all ids (starting from zero) of valid and invalid POIs
         # note: invalid POIs are masked as True in mask
         all_ids = np.any(mask_eta, axis=0)
         # print invalid pois
         if verbose:
             n_inv_pois = np.sum(all_ids)
-            print(f"Number of invalid POIs not considered: {n_inv_pois}")
+            print(f"[Info] Total number of invalid POIs not considered: {n_inv_pois}")
         # get only valid data (according to mask)
         # valid_eta has dimensions (timelen, Total # POIs - masked POIs) 
         inv_idx, valid_eta = hio.detect_invalid_values(mask_eta, eta)
@@ -155,7 +182,7 @@ def main(dir_out: str = dir_out,
         # number of valid POIs (without True values in mask_eta)
         npois: int = np.shape(valid_eta)[1]
         if verbose:
-            print(f"Number of valid POIs considered: {npois}") 
+            print(f"[Info] Number of valid POIs considered: {npois}") 
         # get id for each individual POI.
         # note this starts from 1, while indices from inv_idx start from 0.
         identifiers = np.arange(1, npois + len(inv_idx) + 1)
@@ -172,9 +199,9 @@ def main(dir_out: str = dir_out,
 
         # ----------------------------------------------------------------
         # 2) Compute STA/LTA for all POIs with 
-        # a) depth < 0, 
+        # a) depth < coast_value, 
         # b) distance > min_distance
-        # c) amplitude > min_amplitude
+        # c) amplitude > threshold
         # ----------------------------------------------------------------
         # initialize array with the detection values
         detection_idx = np.zeros(npois)
@@ -312,7 +339,7 @@ def main(dir_out: str = dir_out,
         with open(pklfilename, 'wb') as pklfile:
             pickle.dump(cropped_time_series, pklfile)
         if verbose:
-            print(f'{file} done!')
+            print(f'[Info] {file} done!')
 
 
 if __name__ == '__main__':
