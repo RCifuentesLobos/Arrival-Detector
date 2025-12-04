@@ -32,7 +32,7 @@ def list_outputs_recursively(directory: str,
     List all output files of names name in directories recursively
     """
     output_list = []
-    for path, direc, files in os.walk(directory):
+    for path, _, files in os.walk(directory):
         for file in files:
             if file == name:
                 output_list.append(os.path.join(path, file))
@@ -104,39 +104,43 @@ def read_outputs(output: str):
 
 
 # read depth of POI locations
-def read_depth(file: str) -> np.ndarray:
+def read_depth(depth_file: str) -> np.ndarray:
     """
     Reads the (lon,lat,depth) coordinates of POI locations
     Parameters:
     ----------
-    output : str, 
+    depth_file : str, 
             POI locations
     Returns:
     -------
-    onland : np.ndarray, 
-        Boolean value indicating whether the fault is 
-        in the ocean (0) or on land (1)
+    depth : np.ndarray, 
+        depth of the POIs in meters
     """
-    locs = np.genfromtxt(file)
+    locs = np.genfromtxt(depth_file)
     # get depth of the specified fault
-    onland = locs[:, 2] > 0
-    return onland
+    depth = locs[:, 2]
+    return depth
 
 # get indices of POIs with depth greater than 0 (i.e. on land)
-def get_onland_indices(file: str) -> np.ndarray:
+def get_onland_indices(depth_file: str,
+                       coast_value: float = -1) -> np.ndarray:
     """
     Returns the indices of the POIs with depth greater than 0
     Parameters:
     ----------
-    file : str, 
+    depth_file : str, 
         File containing POI locations (lon,lat,depth) coords
+    coast_value : float,
+        Depth value to consider as coast (default -1 m)
     Returns:
     -------
     onland_indices : np.ndarray, 
         Indices of the POIs on land
     """
     # read depth of POI locations
-    onland = read_depth(file)
+    depth = read_depth(depth_file)
+    # boolean array of POIs on land
+    onland = depth > coast_value
     # get indices of POIs with depth greater than 0 (i.e. on land)
     onland_indices = np.nonzero(onland)[0]
     return onland_indices
@@ -183,7 +187,7 @@ def get_poi_idx_within_min_distance(flat: np.ndarray, flon: np.ndarray,
         # initialize array to store distances
         dists_degrees = np.zeros(npois)
         # initialize array to store indices
-        further_than_min_distance_idx = np.zeros(npois, dtype=bool)
+        further_than_min_distance_idx = np.zeros(npois, dtype=np.bool_)
         for i in range(npois):
             dists_degrees[i] = grc.distance_in_degrees(
                 lat[i], lon[i], flat, flon)
@@ -195,7 +199,7 @@ def get_poi_idx_within_min_distance(flat: np.ndarray, flon: np.ndarray,
         # initialize array to store distances
         dists_degrees = np.zeros((npois, nfaults))
         # initialize array to store indices
-        further_than_min_distance_idx = np.zeros((npois,nfaults), dtype=bool)
+        further_than_min_distance_idx = np.zeros((npois,nfaults), dtype=np.bool_)
         for f in range(nfaults):
             for i in range(npois):
                 dists_degrees[i, f] = grc.distance_in_degrees(
@@ -210,8 +214,8 @@ def get_poi_idx_within_min_distance(flat: np.ndarray, flon: np.ndarray,
 
 
 # Get indices of POIs with distances bigger than min_distance. All POIs
-#  with distances bigger than min_distance, won't be considered in the
-#  cropping of the time series
+# with distances bigger than min_distance, won't be considered in the
+# cropping of the time series
 def get_poi_idx_outside_min_distance(flat: np.ndarray, flon: np.ndarray,
                                     lat: np.ndarray, lon: np.ndarray,                                  
                                     min_distance: float) -> np.ndarray:
@@ -251,7 +255,7 @@ def get_poi_idx_outside_min_distance(flat: np.ndarray, flon: np.ndarray,
         # initialize array to store distances
         dists_degrees = np.zeros(npois)
         # initialize array to store indices
-        less_than_min_distance_idx = np.zeros(npois, dtype=bool)
+        less_than_min_distance_idx = np.zeros(npois, dtype=np.bool_)
         for i in range(npois):
             dists_degrees[i] = grc.distance_in_degrees(
                 lat[i], lon[i], flat, flon)
@@ -263,7 +267,7 @@ def get_poi_idx_outside_min_distance(flat: np.ndarray, flon: np.ndarray,
         # initialize array to store distances
         dists_degrees = np.zeros((npois, nfaults))
         # initialize array to store indices
-        less_than_min_distance_idx = np.zeros((npois,nfaults), dtype=bool)
+        less_than_min_distance_idx = np.zeros((npois,nfaults), dtype=np.bool_)
         for f in range(nfaults):
             for i in range(npois):
                 dists_degrees[i, f] = grc.distance_in_degrees(
@@ -298,11 +302,83 @@ def get_signal_amplitude_below_threshold(eta: np.ndarray,
     # get number of POIs (rows are time, columns are POIs)
     npois = eta.shape[1]
     # initialize array to store indices
-    below_threshold_idx = np.zeros(npois, dtype=bool)
+    below_threshold_idx = np.zeros(npois, dtype=np.bool_)
     # loop through POIs
     for i in range(npois):
         # check if the maximum amplitude is below the threshold 
         if np.max(np.abs(eta[:, i])) < min_amplitude:
+            below_threshold_idx[i] = True
+    return below_threshold_idx
+
+# get the indices of POIs signals whose maximum elevation is less than 
+# variable threshold function of its depth. 
+# This threshold is defined by the helper function:
+# a)  _get_poi_threshold
+
+def _get_poi_threshold(depth_file: str,
+                       val: float = 0.05,
+                       coast_value: float | None = None) -> np.ndarray:
+    """
+    Reads the POI depths and returns the variable threshold
+    Parameters:
+    -----------
+    depth_file : str, 
+        File containing POI locations (lon,lat,depth) coords
+    val : float,
+        Constant value for the threshold function. Defaults to 0.05
+    coast_value : float | None,
+        Depth value (in meters) to consider as coast. If None, coast defaults to 0 m
+    Returns:
+    --------
+    threshold : np.ndarray, 
+        threshold array for every POI
+    """
+    # read depth of POI locations
+    depth = read_depth(depth_file)
+    # apply threshold function only to ocean POIs (depth < coast_value)
+    if coast_value is None:
+        coast_value = 0
+    # disregard land POIs (depth >= coast_value). 
+    # They will always be filtered out
+    depth[depth >= coast_value] = np.nan
+    # compute threshold as a function of depth
+    threshold = val  / (np.abs(depth)**0.25)
+    return threshold
+
+# b) then, the main filter function uses this helper function
+def get_signal_amplitude_below_greenslaw(eta: np.ndarray,
+                                         depth_file: str,
+                                         val: float = 0.05,
+                                         coast_value: float | None = None) -> np.ndarray:
+    """
+    Returns the indices of the POIs with maximum amplitude smaller
+    than the threshold given by Green's Law 
+    Meant to replace get_signal_amplitude_below_threshold
+    Parameters:
+    ----------
+    eta : np.ndarray, 
+        Elevation at the POIs
+    depth_file : str, 
+        File containing POI locations (lon,lat,depth) coords
+    val : float,
+        Constant value for the threshold function. Defaults to 0.05
+    coast_value : float | None,
+        Depth value (in meters) to consider as coast. If None, coast defaults to 0 m
+    Returns:
+    -------
+    below_threshold_idx : np.ndarray,
+        array of POI indices whose max amplitudes are below the threshold given by Green's Law
+    """
+    # get number of POIs (rows are time, columns are POIs)
+    npois = eta.shape[1]
+    # initialize array to store indices
+    below_threshold_idx = np.zeros(npois, dtype=np.bool_)
+    # get threshold array
+    threshold = _get_poi_threshold(depth_file, val=val, coast_value=coast_value)
+    # loop through POIs
+    for i in range(npois):
+        # check if the maximum amplitude is below the threshold 
+        if np.max(np.abs(eta[:, i])) < threshold[i]:
             below_threshold_idx[i] = True
     return below_threshold_idx
 
