@@ -32,6 +32,10 @@ trigger_value: int = 8
 # ------------------------------------------------------------------------
 # minimum distance from POI to fault to consider for arrival algorithm
 min_distance: float = 25 # in degrees
+# minimum amplitude tolerance for POI to be considered (amplitude
+# in meters within which the signal is considered noise, above the 
+# threshold, it is considered a tsunami signal)
+min_amplitude: float = 0.05 # in meters
 
 # ------------------------------------------------------------------------
 # D) Define which filters to apply
@@ -46,6 +50,7 @@ coast_value: float = -1
 filter_distance: bool = False
 # Filter by amplitude? If True, apply amplitude filter before processing
 filter_amplitude: bool = True
+
 
 # ------------------------------------------------------------------------
 # E) set verbosity level
@@ -63,6 +68,7 @@ def main(dir_out: str = dir_out,
          filter_distance: bool = filter_distance,
          min_distance: float = min_distance,
          filter_amplitude: bool = filter_amplitude,
+         min_amplitude: float = min_amplitude,
          verbose: bool = verbose) -> None:
     """
     Parameters:
@@ -90,6 +96,8 @@ def main(dir_out: str = dir_out,
         Minimum distance from POI to fault to consider
     filter_amplitude : bool,
         If True, apply amplitude filter before processing
+    min_amplitude : float, 
+        Minimum amplitude tolerance for POI to be considered
     verbose : bool, 
         If True, print information during processing
     """
@@ -163,7 +171,8 @@ def main(dir_out: str = dir_out,
                 print(f"[Filter] Applying amplitude filter")
             no_amplitude_indices = hio.get_signal_amplitude_below_greenslaw(eta,
                                                                            depth_file,
-                                                                           coast_value=coast_value)
+                                                                           min_amplitude,
+                                                                           coast_value)
             # modify mask. If i-th column is True, that POI is masked
             mask_eta[:, no_amplitude_indices] = True
             if verbose:

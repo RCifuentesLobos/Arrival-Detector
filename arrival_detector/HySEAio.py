@@ -330,7 +330,7 @@ def get_signal_amplitude_below_threshold(eta: np.ndarray,
 # a)  _get_poi_threshold
 
 def _get_poi_threshold(depth_file: str,
-                       val: float = 0.05,
+                       minamp: float,
                        coast_value: float | None = None) -> np.ndarray:
     """
     Reads the POI depths and returns the variable threshold
@@ -338,8 +338,8 @@ def _get_poi_threshold(depth_file: str,
     -----------
     depth_file : str, 
         File containing POI locations (lon,lat,depth) coords
-    val : float,
-        Constant value for the threshold function. Defaults to 0.05
+    minamp : float,
+        Minimum amplitude constant for the threshold function.
     coast_value : float | None,
         Depth value (in meters) to consider as coast. If None, coast defaults to 0 m
     Returns:
@@ -356,13 +356,13 @@ def _get_poi_threshold(depth_file: str,
     # They will always be filtered out
     depth[depth >= coast_value] = np.nan
     # compute threshold as a function of depth
-    threshold = val  / (np.abs(depth)**0.25)
+    threshold = minamp / (np.abs(depth)**0.25)
     return threshold
 
 # b) then, the main filter function uses this helper function
 def get_signal_amplitude_below_greenslaw(eta: np.ndarray,
                                          depth_file: str,
-                                         val: float = 0.05,
+                                         minamp: float,
                                          coast_value: float | None = None) -> np.ndarray:
     """
     Returns the indices of the POIs with maximum amplitude smaller
@@ -374,8 +374,8 @@ def get_signal_amplitude_below_greenslaw(eta: np.ndarray,
         Elevation at the POIs
     depth_file : str, 
         File containing POI locations (lon,lat,depth) coords
-    val : float,
-        Constant value for the threshold function. Defaults to 0.05
+    minamp : float,
+        Minimum amplitude constant for the threshold function.
     coast_value : float | None,
         Depth value (in meters) to consider as coast. If None, coast defaults to 0 m
     Returns:
@@ -388,7 +388,7 @@ def get_signal_amplitude_below_greenslaw(eta: np.ndarray,
     # initialize array to store indices
     below_threshold_idx = np.zeros(npois, dtype=np.bool_)
     # get threshold array
-    threshold = _get_poi_threshold(depth_file, val=val, coast_value=coast_value)
+    threshold = _get_poi_threshold(depth_file, minamp=minamp, coast_value=coast_value)
     # loop through POIs
     for i in range(npois):
         # check if the maximum amplitude is below the threshold 
