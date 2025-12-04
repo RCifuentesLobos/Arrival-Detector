@@ -95,6 +95,8 @@ def main(dir_out: str = dir_out,
     """
     # list all output files
     files = hio.list_outputs_recursively(dir_out)
+    if verbose:
+        print(f'[Info] Processing {len(files)} file(s) in {dir_out}')
     # loop through all output files
     for file in files:
         print(f'[Info] Processing {file}')
@@ -102,8 +104,8 @@ def main(dir_out: str = dir_out,
         # 1) Read data and apply filters
         # ----------------------------------------------------------------
         # read data
-        time, lon, lat, \
-            eta, _, _, _, mask_eta, \
+        time, lon, lat, eta, ux, uy, \
+            _, _, _, mask_eta, _, _,  \
             fault_info = hio.read_outputs(file)
         # get total number of POIs
         total_pois = np.shape(eta)[1]
@@ -174,9 +176,14 @@ def main(dir_out: str = dir_out,
         if verbose:
             n_inv_pois = np.sum(all_ids)
             print(f"[Info] Total number of invalid POIs not considered: {n_inv_pois}")
-        # get only valid data (according to mask)
+        # ----------------------------------------------------------------
+        # 1.1) Get only valid data (according to mask)
+        # ----------------------------------------------------------------
         # valid_eta has dimensions (timelen, Total # POIs - masked POIs) 
         inv_idx, valid_eta = hio.detect_invalid_values(mask_eta, eta)
+        # get valid ux and uy
+        _, valid_ux = hio.detect_invalid_values(mask_eta, ux)
+        _, valid_uy = hio.detect_invalid_values(mask_eta, uy)
         # Get length of time series and number of valid POIs
         timelen: int = len(time)
         # number of valid POIs (without True values in mask_eta)
@@ -254,7 +261,7 @@ def main(dir_out: str = dir_out,
         # initialize the boolean array for the detection status after
         # checking the best estimate
         detection_status_after = np.zeros((len(final_idx),
-                                           nborders), dtype=bool)
+                                           nborders), dtype=np.bool_)
         # Loop through all detection status that weren't already correct
         for i, idx in enumerate(final_idx):
             if detection_status[i, :].all():
@@ -272,6 +279,7 @@ def main(dir_out: str = dir_out,
                 # we correct the detection
                 final_idx[i] = du.correct_detection(
                     valid_eta[:, i], final_idx[i], movement=2)
+                
         # ----------------------------------------------------------------
         # 8) Sets arrival index to 0 if POI is within min_distance
         # ----------------------------------------------------------------
@@ -288,7 +296,7 @@ def main(dir_out: str = dir_out,
         # up until the arrival index. It saves the time series to a
         # dictionary to save it to a pickle file
         # ----------------------------------------------------------------
-        # poopulate a dictionary to serialize the cropped elevation to
+        # populate a dictionary to serialize the cropped elevation to
         # a .pkl file
         # initialize the dictionary
         cropped_time_series = {}
@@ -299,7 +307,7 @@ def main(dir_out: str = dir_out,
         # if 1720 is invalid, the idx 1720 will be False
         # all_ids has to be bool
         if all_ids.dtype != np.bool_:
-            all_ids = np.array(all_ids, dtype=bool)
+            all_ids = np.array(all_ids, dtype=np.bool_)
         cropped_time_series['all_valid_pois'] = ~all_ids
         # save time data
         cropped_time_series['start_time'] = time[0]
@@ -314,8 +322,14 @@ def main(dir_out: str = dir_out,
         # save elevation information
         for i, idx in enumerate(final_idx):
             # save cropped time series
+            # elevation time series after cropping
             cropped_time_series[valid_ids[i]] = du.crop_time_series(valid_eta[:, i],
                                                                     idx)
+            # velocities time series after cropping
+            cropped_time_series[f'ux_{valid_ids[i]}'] = du.crop_time_series(valid_ux[:, i],
+                                                                            idx)
+            cropped_time_series[f'uy_{valid_ids[i]}'] = du.crop_time_series(valid_uy[:, i],
+                                                                            idx)
             # get index of maximum elevation (taking into account only positive)
             max_elevation_idx = np.argmax(valid_eta[:, i])
             # get index of maximum amplitude (taking into account entire amplitude)
@@ -340,6 +354,7 @@ def main(dir_out: str = dir_out,
             pickle.dump(cropped_time_series, pklfile)
         if verbose:
             print(f'[Info] {file} done!')
+            print(f'[Info] Cropped time series saved to {pklfilename}')
 
 
 if __name__ == '__main__':
