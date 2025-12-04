@@ -99,8 +99,22 @@ def read_outputs(output: str):
         mask_eta = np.ma.getmask(eta)
     else:
         mask_eta = False
+    
+    # get velocities
+    ux = data.variables['ux'][:]
+    uy = data.variables['uy'][:]
+    if np.ma.is_masked(ux):
+        mask_ux = np.ma.getmask(ux)
+    else:
+        mask_ux = False
+    if np.ma.is_masked(uy):
+        mask_uy = np.ma.getmask(uy)
+    else:
+        mask_uy = False
 
-    return time, lon, lat, eta, mask_time, mask_lon, mask_lat, mask_eta, fault_info
+    return time, lon, lat, eta, ux, uy, \
+           mask_time, mask_lon, mask_lat, \
+           mask_eta, mask_ux, mask_uy, fault_info
 
 
 # read depth of POI locations
@@ -514,7 +528,12 @@ def load_pickle_elevation(filename: str,
     # number of time series
     npois = data['npois']
     # initialize time series array
+    # for elevation
     eta = np.zeros((ntimes, npois))
+    # for velocity u_x
+    ux = np.zeros((ntimes, npois))
+    # for velocity u_y
+    uy = np.zeros((ntimes, npois))
     # initialize array for cropped times
     crop_times = np.zeros(npois)
     # initialize array for maximum elevation
@@ -528,11 +547,15 @@ def load_pickle_elevation(filename: str,
     # loop though all cropped time series
     for i, id in enumerate(valid_ids):
         # 1) retrieve the cropped time series
-        eta_crop = data[id]
+        eta_crop = data[id] # elevation time series
+        ux_crop = data[f'ux_{id}'] # velocity u_x time series
+        uy_crop = data[f'uy_{id}'] # velocity u_y time series
         # 1.1) length of cropped time series
         lec = len(eta_crop)
         # 1.2) assign the last lec elements
         eta[-lec:, i] = eta_crop
+        ux[-lec:, i] = ux_crop
+        uy[-lec:, i] = uy_crop
         # 2) retrieve the time of crop
         crop_times[i] = data[f'crop_time_{id}']
         # 3) retrieve maximum elevation
@@ -548,24 +571,27 @@ def load_pickle_elevation(filename: str,
     lat = data['lat']
     # if ret_all is True returns everything
     if ret_all:
-        return data, time, crop_times, lon, lat, eta, \
+        return data, time, crop_times, lon, lat, eta, ux, uy,\
             max_amp, max_elev, time_max_amp, time_max_elev, valid_ids, all_ids
     else:
-        return time, crop_times, lon, lat, eta
+        return time, crop_times, lon, lat, eta, ux, uy
 
 
 # trasnform pickle to netcdf
-def pickle2nc(filename: str) -> None:
+def pickle2nc(filename: str,
+              ncfilename: str | None = None) -> None:
     """
     Transforms a pickle file into a netcdf format
     Parameters:
     ----------
     filename: str,
         Name of the pickle file
+    ncfilename: str | None,
+        Name of the output netcdf file. If None, it will be named
+        as <pickle_filename>_post.nc
     """
     # 1) load pickle data
-    # TODO: update new variables all_ids "valid_pois"
-    data, time, crop_time, lon, lat, eta, \
+    data, time, crop_time, lon, lat, eta, ux, uy,\
         max_amp, max_elev, \
         time_max_amp, time_max_elev, \
         valid_ids, all_ids = load_pickle_elevation(
@@ -573,7 +599,8 @@ def pickle2nc(filename: str) -> None:
     npois = data['npois']
     # 2) create nc file
     # 2.1) nc file name
-    ncfilename = f"{filename.split('.')[0]}_post.nc"
+    if ncfilename is None:
+        ncfilename = f"{filename.split('.')[0]}_post.nc"
     nc_file = nc.Dataset(ncfilename, 'w', format='NETCDF4')
     # 3) create dimensions
     # 3.1) for time
@@ -600,7 +627,12 @@ def pickle2nc(filename: str) -> None:
     lon_var = nc_file.createVariable('lon', np.float32, ('lons',))
     lat_var = nc_file.createVariable('lat', np.float32, ('lats',))
     # 4.3) for time series
+    # 4.3.3) for elevation
     eta_var = nc_file.createVariable('eta', np.float32, ('time', 'npois'))
+    # 4.3.4) for velocity u_x
+    ux_var = nc_file.createVariable('ux', np.float32, ('time', 'npois'))
+    # 4.3.5) for velocity u_y
+    uy_var = nc_file.createVariable('uy', np.float32, ('time', 'npois'))
     # 4.4) for crop timestamps
     crop_time_var = nc_file.createVariable(
         'crop_time', np.float32, ('crop_time',))
@@ -626,7 +658,12 @@ def pickle2nc(filename: str) -> None:
     lon_var[:] = lon
     lat_var[:] = lat
     # 5.3) for time series
+    # 5.3.1) for elevation
     eta_var[:, :] = eta
+    # 5.3.2) for velocity u_x
+    ux_var[:, :] = ux
+    # 5.3.3) for velocity u_y
+    uy_var[:, :] = uy
     # 5.4) for crop timestamps
     crop_time_var[:] = crop_time
     # 5.5) for max amp and max elevations
