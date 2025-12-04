@@ -135,7 +135,7 @@ def read_depth(depth_file: str) -> np.ndarray:
     depth = locs[:, 2]
     return depth
 
-# get indices of POIs with depth greater than 0 (i.e. on land)
+# get indices of POIs with depth greater than coast_value (i.e. on land)
 def get_onland_indices(depth_file: str,
                        coast_value: float = -1) -> np.ndarray:
     """
@@ -155,7 +155,7 @@ def get_onland_indices(depth_file: str,
     depth = read_depth(depth_file)
     # boolean array of POIs on land
     onland = depth > coast_value
-    # get indices of POIs with depth greater than 0 (i.e. on land)
+    # get indices of POIs with depth greater than coast_value
     onland_indices = np.nonzero(onland)[0]
     return onland_indices
 
