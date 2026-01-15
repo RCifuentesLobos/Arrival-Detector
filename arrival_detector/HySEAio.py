@@ -387,6 +387,7 @@ def get_signal_amplitude_below_greenslaw(eta: np.ndarray,
     npois = eta.shape[1]
     # initialize array to store indices
     below_threshold_idx = np.zeros(npois, dtype=np.bool_)
+    print(npois)
     # get threshold array
     threshold = _get_poi_threshold(depth_file, minamp=minamp, coast_value=coast_value)
     # loop through POIs
@@ -510,6 +511,8 @@ def load_pickle_elevation(filename: str,
     # load data
     with open(filename, 'rb') as file:
         data = pickle.load(file)
+    # look metadata value for velocity. If not present, assume False
+    has_velocity = data.get('has_velocity', False)
     # 0) retrieve valid ids and all valid pois in boolean dtype
     valid_ids = data['valid_ids']
     all_ids = data['all_valid_pois']
@@ -529,11 +532,13 @@ def load_pickle_elevation(filename: str,
     npois = data['npois']
     # initialize time series array
     # for elevation
-    eta = np.zeros((ntimes, npois))
-    # for velocity u_x
-    ux = np.zeros((ntimes, npois))
-    # for velocity u_y
-    uy = np.zeros((ntimes, npois))
+    if not has_velocity:
+        eta = np.zeros((ntimes, npois))
+    else:
+        # for velocity u_x
+        ux = np.zeros((ntimes, npois))
+        # for velocity u_y
+        uy = np.zeros((ntimes, npois))
     # initialize array for cropped times
     crop_times = np.zeros(npois)
     # initialize array for maximum elevation
@@ -545,36 +550,50 @@ def load_pickle_elevation(filename: str,
     # initialize array for time of arrival of max amplitude
     time_max_amp = np.zeros(npois)
     # loop though all cropped time series
-    for i, id in enumerate(valid_ids):
+    for i, poi_id in enumerate(valid_ids):
         # 1) retrieve the cropped time series
-        eta_crop = data[id] # elevation time series
-        ux_crop = data[f'ux_{id}'] # velocity u_x time series
-        uy_crop = data[f'uy_{id}'] # velocity u_y time series
-        # 1.1) length of cropped time series
-        lec = len(eta_crop)
-        # 1.2) assign the last lec elements
-        eta[-lec:, i] = eta_crop
-        ux[-lec:, i] = ux_crop
-        uy[-lec:, i] = uy_crop
+        # elevation time series, if present
+        if not has_velocity:
+            eta_crop = data[poi_id] 
+            # 1.1) length of cropped time series
+            lec = len(eta_crop)
+            # 1.2) assign the last lec elements
+            eta[-lec:, i] = eta_crop
+        # velocity time series, if present
+        if has_velocity:
+            ux_crop = data[f'ux_{poi_id}']
+            uy_crop = data[f'uy_{poi_id}']
+            # 1.1) length of cropped time series
+            lec = len(ux_crop)
+            if len(uy_crop) != lec:
+                raise ValueError(f"[Warning] Length mismatch between ux and uy for POI {poi_id}")
+            # 1.2) assign the last lec elements
+            ux[-lec:, i] = ux_crop
+            uy[-lec:, i] = uy_crop
         # 2) retrieve the time of crop
-        crop_times[i] = data[f'crop_time_{id}']
+        crop_times[i] = data[f'crop_time_{poi_id}']
         # 3) retrieve maximum elevation
-        max_elev[i] = data[f'max_tsunami_elev_{id}']
+        max_elev[i] = data[f'max_tsunami_elev_{poi_id}']
         # 4) retrieve maximum amplitude
-        max_amp[i] = data[f'max_tsunami_amp_{id}']
+        max_amp[i] = data[f'max_tsunami_amp_{poi_id}']
         # 5) retrieve time of arrival of max elevation
-        time_max_elev[i] = data[f'max_tsunami_elev_time_{id}']
+        time_max_elev[i] = data[f'max_tsunami_elev_time_{poi_id}']
         # 6) retrieve time of arrival of max amplitude
-        time_max_amp[i] = data[f'max_tsunami_amp_time_{id}']
+        time_max_amp[i] = data[f'max_tsunami_amp_time_{poi_id}']
     # 3) retrieve coordinates
     lon = data['lon']
     lat = data['lat']
     # if ret_all is True returns everything
-    if ret_all:
-        return data, time, crop_times, lon, lat, eta, ux, uy,\
+    if ret_all and not has_velocity:
+        return data, time, crop_times, lon, lat, eta,\
             max_amp, max_elev, time_max_amp, time_max_elev, valid_ids, all_ids
+    elif ret_all and has_velocity:
+        return data, time, crop_times, lon, lat, ux, uy,\
+            max_amp, max_elev, time_max_amp, time_max_elev, valid_ids, all_ids
+    elif not ret_all and has_velocity:
+        return time, crop_times, lon, lat, ux, uy
     else:
-        return time, crop_times, lon, lat, eta, ux, uy
+        return time, crop_times, lon, lat, eta
 
 
 # trasnform pickle to netcdf
@@ -590,17 +609,34 @@ def pickle2nc(filename: str,
         Name of the output netcdf file. If None, it will be named
         as <pickle_filename>_post.nc
     """
+    # 0) check if file exists and if it contains velocity data
+    if not os.path.isfile(filename):
+        raise FileNotFoundError(f"[Error] Pickle file {filename} not found")
+    # load data to check for velocity
+    with open(filename, 'rb') as file:
+        data_check = pickle.load(file)
+    has_velocity = data_check.get('has_velocity', False)
     # 1) load pickle data
-    data, time, crop_time, lon, lat, eta, ux, uy,\
-        max_amp, max_elev, \
-        time_max_amp, time_max_elev, \
-        valid_ids, all_ids = load_pickle_elevation(
-                             filename, ret_all=True)
+    if has_velocity:
+        data, time, crop_time, lon, lat, ux, uy,\
+            max_amp, max_elev, \
+            time_max_amp, time_max_elev, \
+            valid_ids, all_ids = load_pickle_elevation(
+                                filename, ret_all=True)
+    else:
+        data, time, crop_time, lon, lat, eta,\
+            max_amp, max_elev, \
+            time_max_amp, time_max_elev, \
+            valid_ids, all_ids = load_pickle_elevation(
+                                filename, ret_all=True)
     npois = data['npois']
     # 2) create nc file
     # 2.1) nc file name
-    if ncfilename is None:
+    if ncfilename is None and not has_velocity:
         ncfilename = f"{filename.split('.')[0]}_post.nc"
+    elif ncfilename is None and has_velocity:
+        ncfilename = f"{filename.split('.')[0]}_vel_post.nc"
+    # 2.2) create nc file
     nc_file = nc.Dataset(ncfilename, 'w', format='NETCDF4')
     # 3) create dimensions
     # 3.1) for time
@@ -627,12 +663,14 @@ def pickle2nc(filename: str,
     lon_var = nc_file.createVariable('lon', np.float32, ('lons',))
     lat_var = nc_file.createVariable('lat', np.float32, ('lats',))
     # 4.3) for time series
-    # 4.3.3) for elevation
-    eta_var = nc_file.createVariable('eta', np.float32, ('time', 'npois'))
-    # 4.3.4) for velocity u_x
-    ux_var = nc_file.createVariable('ux', np.float32, ('time', 'npois'))
-    # 4.3.5) for velocity u_y
-    uy_var = nc_file.createVariable('uy', np.float32, ('time', 'npois'))
+    if not has_velocity:
+        # 4.3.3) for elevation
+        eta_var = nc_file.createVariable('eta', np.float32, ('time', 'npois'))
+    else:
+        # 4.3.4) for velocity u_x
+        ux_var = nc_file.createVariable('ux', np.float32, ('time', 'npois'))
+        # 4.3.5) for velocity u_y
+        uy_var = nc_file.createVariable('uy', np.float32, ('time', 'npois'))
     # 4.4) for crop timestamps
     crop_time_var = nc_file.createVariable(
         'crop_time', np.float32, ('crop_time',))
@@ -658,12 +696,14 @@ def pickle2nc(filename: str,
     lon_var[:] = lon
     lat_var[:] = lat
     # 5.3) for time series
+    if not has_velocity:
     # 5.3.1) for elevation
-    eta_var[:, :] = eta
-    # 5.3.2) for velocity u_x
-    ux_var[:, :] = ux
-    # 5.3.3) for velocity u_y
-    uy_var[:, :] = uy
+        eta_var[:, :] = eta
+    else:
+        # 5.3.2) for velocity u_x
+        ux_var[:, :] = ux
+        # 5.3.3) for velocity u_y
+        uy_var[:, :] = uy
     # 5.4) for crop timestamps
     crop_time_var[:] = crop_time
     # 5.5) for max amp and max elevations
