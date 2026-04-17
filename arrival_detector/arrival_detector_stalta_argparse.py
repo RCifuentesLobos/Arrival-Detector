@@ -308,6 +308,7 @@ def main():
     # c) get POIs with offset near fault
     # d) eliminate offset
     if filter_offset:
+        # method 2) 
         if verbose:
             print(f"[Filter] Eliminating offset from time series\n:",
                     f"removing initial uplift or subsidence")
@@ -341,6 +342,13 @@ def main():
             offset = valid_eta[0, p]
             # eliminate offset
             valid_eta[:, p] -= offset
+        # simpler method
+        #isoffset = (np.abs(valid_eta[0,:]) > offset_tol)
+        #is_affected = np.where(isoffset)[0]
+        #for i, p in enumerate(is_affected):
+            # get offset
+        #    offset = valid_eta[0, p]
+        #    valid_eta[:, p] -= offset        
 
         # ----------------------------------------------------------------
         # 10) Crops the elevation time series eliminating the leading zeros
