@@ -16,31 +16,46 @@ class POIs(object):
         # filename
         self.filename = filename
         # read the file and set variables
-        time, lon, lat, eta, \
-            mask_time, mask_lon, mask_lat, mask_eta, \
+        time, lon, lat, eta, ux, uy,\
+            mask_time, mask_lon, mask_lat, \
+            mask_eta, mask_ux, mask_uy, \
             fault_info = read_outputs(filename)
         self.time = time
         self.lon = lon
         self.lat = lat
         self.eta = eta
+        self.ux = ux
+        self.uy = uy
         self.mask_time = mask_time
         self.mask_lon = mask_lon
         self.mask_lat = mask_lat
         self.mask_eta = mask_eta
+        self.mask_ux = mask_ux
+        self.mask_uy = mask_uy
         self.fault_info = fault_info
         # get fault attributes
         faults = get_fault_attributes(fault_info)
         self.faults = faults
 
     # Plot a map showing the location of the points of interest and the fault(s)
-    def plot_locations(self, plotdistance: bool = False):
+    def plot_locations(self, 
+                       plotdistance: bool = False,
+                       mask: np.ndarray = None):
         """
         Creates a map of the location of the POIs
         Parameters:
         ----------
         plotdistance : bool
-            If True, the POIs are colored according to their distance to the first fault
+            If True, the POIs are colored according to their distance
+            to the first fault
+        mask : np.ndarray
+            Mask array for the elevation data (True for invalid values). 
+            If None, mask=self.mask_eta
         """
+        # check if mask is provided, otherwise use self.mask_eta
+        if mask is None:
+            mask = self.mask_eta
+
         # initialize map
         fig, ax = plt.subplots(subplot_kw={'projection': ccrs.PlateCarree(central_longitude=180)},
                                figsize=(6, 5),
@@ -52,16 +67,27 @@ class POIs(object):
         minlat = -60
         maxlon = 340
         minlon = 60
-        ax.set_extent([minlon, maxlon, minlat, maxlat], crs=ccrs.PlateCarree())
+        ax.set_extent([minlon, maxlon, minlat, maxlat], 
+                      crs=ccrs.PlateCarree())
         gl = ax.gridlines(draw_labels=True, alpha=0.5,
                           linestyle='--', color='gray')
         gl.top_labels = False
         gl.right_labels = False
 
         # plot subfaults
-        for i in self.faults:
-            f = ax.scatter(i['lon_barycenter'], i['lat_barycenter'],
-                           s=20, marker='s', edgecolor='black', facecolor='red', transform=ccrs.PlateCarree(), zorder=10)
+        if len(self.faults) > 1:
+            for i in self.faults:
+                f = ax.scatter(i['lon_barycenter'], i['lat_barycenter'],
+                               s=20, marker='s', 
+                               edgecolor='black', facecolor='red', 
+                               transform=ccrs.PlateCarree(), 
+                               zorder=10)
+        else:
+            f = ax.scatter(self.faults[0]['lon_barycenter'], self.faults[0]['lat_barycenter'],
+                           s=20, marker='s', 
+                           edgecolor='black', facecolor='red', 
+                           transform=ccrs.PlateCarree(), 
+                           zorder=10)
 
         # scale colors of POIs according to the distance to fault
         if plotdistance:
@@ -72,48 +98,101 @@ class POIs(object):
             for i, (lo, la) in enumerate(zip(self.lon, self.lat)):
                 distance[i] = haversine(lo, la, lonfault, latfault)
             # plot POIs
-            inv_idx, _ = detect_invalid_values(self.mask_eta, self.eta)
+            inv_idx, _ = detect_invalid_values(mask, self.eta)
             valid_poi = ax.scatter(np.delete(self.lon, inv_idx), np.delete(self.lat, inv_idx),
                                    c=np.delete(distance, inv_idx),
-                                   s=10, marker='o', edgecolor='black', linewidth=0.2,
-                                   transform=ccrs.PlateCarree(), zorder=3)
+                                   s=10, marker='o', 
+                                   edgecolor='black', 
+                                   linewidth=0.2,
+                                   transform=ccrs.PlateCarree(), 
+                                   zorder=3)
             plt.rcParams['hatch.linewidth'] = 0.1
             invalid_poi = ax.scatter(self.lon[inv_idx], self.lat[inv_idx],
-                                     s=10, marker='o', edgecolor='black', linewidth=0.2, facecolor='yellow',
+                                     s=10, marker='o', 
+                                     edgecolor='black', 
+                                     linewidth=0.2, 
+                                     facecolor='yellow',
                                      hatch='x',
-                                     transform=ccrs.PlateCarree(), zorder=3)
+                                     transform=ccrs.PlateCarree(), 
+                                     zorder=3)
         elif not plotdistance:
             # plot POIs
-            inv_idx, _ = detect_invalid_values(self.mask_eta, self.eta)
+            inv_idx, _ = detect_invalid_values(mask, self.eta)
             valid_poi = ax.scatter(np.delete(self.lon, inv_idx), np.delete(self.lat, inv_idx),
-                                   s=10, marker='o', edgecolor='black', linewidth=0.2, facecolor='blue',
-                                   transform=ccrs.PlateCarree(), zorder=3)
+                                   s=10, marker='o', 
+                                   edgecolor='black', 
+                                   linewidth=0.2, 
+                                   facecolor='blue',
+                                   transform=ccrs.PlateCarree(), 
+                                   zorder=3)
             plt.rcParams['hatch.linewidth'] = 0.1
             invalid_poi = ax.scatter(self.lon[inv_idx], self.lat[inv_idx],
-                                     s=10, marker='o', edgecolor='black', linewidth=0.2, facecolor='yellow',
+                                     s=10, marker='o', 
+                                     edgecolor='black', 
+                                     linewidth=0.2, 
+                                     facecolor='yellow',
                                      hatch='x',
-                                     transform=ccrs.PlateCarree(), zorder=3)
+                                     transform=ccrs.PlateCarree(), 
+                                     zorder=3)
         # labes and titles
         labels = ['Fault',
                   'Valid POI',
                   'Invalid POI']
         plt.legend([f,
                     valid_poi,
-                    invalid_poi], labels,
-                   loc='lower left', fancybox=True)
+                    invalid_poi], 
+                    labels,
+                    loc='lower left', 
+                    fancybox=True)
         plt.title('POIs locations', fontsize=11)
         plt.tight_layout()
         plt.show()
 
     # plot the elevation time series of a POI
-    def plot_elevation(self, npoi: int):
+    def plot_elevation(self, 
+                       npoi: int,
+                       valid_eta: np.ndarray = None,
+                       valid_lon: np.ndarray = None,
+                       valid_lat: np.ndarray = None):
         """
         plots the npoi-th elevation time series from the output
+        Parameters
+        ----------
+        npoi : int
+            Index of the POI to plot (0-based)
+        valid_eta : np.ndarray, optional
+            Masked array of the elevation data, of dimensions (time, nvalidpoi). 
+            If None, valid_eta=self.mask_eta
+        valid_lon : np.ndarray, optional
+            Masked array of the longitude data. If None,
+            valid_lon=self.mask_lon
+        valid_lat : np.ndarray, optional
+            Masked array of the latitude data. If None,
+            valid_lat=self.mask_lat
         """
+        # check if valid_eta, valid_lon and valid_lat are provided. 
+        # All three have to be provided together, if one is None, the other two have to be None as well
+        if (valid_eta is None) or (valid_lon is None) or (valid_lat is None):
+            eta = self.eta
+            lon = self.lon
+            lat = self.lat
+            labtxt = f"POI idx: {npoi}\nlon: {lon[npoi]:.2f}°\nlat: {lat[npoi]:.2f}°"
+        else: 
+            eta = valid_eta
+            lon = valid_lon
+            lat = valid_lat
+            labtxt = f"Valid POI idx: {npoi}\nlon: {lon[npoi]:.2f}°\nlat: {lat[npoi]:.2f}°"
+        # initialize figure
         fig, ax = plt.subplots(figsize=(12, 4))
-        ax.plot(self.time, self.eta[:, npoi],
-                color='k', label=f"POI: {npoi}\n"+r"$\eta$ (m)")
-        ax.legend(loc='best')
+        ax.plot(self.time, eta[:, npoi],
+                color='k',)
+        patch = mpatches.Patch(color='none', 
+                               label=labtxt)
+        ax.legend(handles=[patch], 
+                  loc='best', 
+                  handlelength=0, 
+                  handletextpad=0)
+        ax.set_xlim([np.min(self.time), np.max(self.time)])
         plt.xlabel('Time (s)')
         plt.ylabel('Elevation (m)')
         plt.show()
