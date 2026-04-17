@@ -29,6 +29,8 @@ def local_parser():
     parser.add_argument('--min_distance', type=float, default=25, required=False, help='minimum distance from POI to fault to consider for arrival algorithm')
     parser.add_argument('--min_amplitude', type=float, default=0.01, required=False, help='minimum amplitude tolerance for POI to be considered in meters')
     parser.add_argument('--coast_value', type=float, default=0, required=False, help='threshold to define coast')
+    parser.add_argument('--offset_tol', type=float, default=1e-16, required=False, help='tolerance for considering offset')
+    parser.add_argument('--def_field', type=float, default=1, required=False, help='distance from fault to consider offset')
     parser.add_argument('--save-velocity', action=argparse.BooleanOptionalAction, default=False, help='Process and save (ux, uy) instead of eta.')
 
     # load arguments
@@ -52,8 +54,11 @@ def main():
     filter_depth: bool = True
     filter_distance: bool = True
     filter_amplitude: bool = True
+    filter_offset: bool = True
     min_distance = local_opts.min_distance
     min_amplitude = local_opts.min_amplitude
+    offset_tol = local_opts.offset_tol
+    def_field = local_opts.def_field
     verbose: bool = True
 
     """
@@ -293,8 +298,52 @@ def main():
             if is_poi_within[val_ids - 1]:
                 final_idx[idx] = 0
 
+    # ----------------------------------------------------------------
+    # 9) Eliminates offset 
+    # ----------------------------------------------------------------
+    # Adds/substracts offset from the time series
+    # a) get POIs near faults
+    # b) check where there's an offset 
+    # (initial value higher than tolerance)
+    # c) get POIs with offset near fault
+    # d) eliminate offset
+    if filter_offset:
+        if verbose:
+            print(f"[Filter] Eliminating offset from time series\n:",
+                    f"removing initial uplift or subsidence")
+        # a)
+        # initialize array with idx of POIs near faults
+        is_near_fault = np.zeros_like(valid_ids, 
+                                      dtype=np.bool_)
+        if len(fault_info_list) > 1:
+            for f in fault_info_list:
+                near_fault_poi_idx = hio.get_poi_idx_within_min_distance(f['lat_barycenter'], 
+                                                                         f['lon_barycenter'], 
+                                                                         vlat, vlon,
+                                                                         def_field)
+                # get indices of POIs within min_distance from a fault
+                is_near_fault[near_fault_poi_idx] = True
+        else:
+            near_fault_poi_idx = hio.get_poi_idx_within_min_distance(flat, flon, 
+                                                                     vlat, vlon,
+                                                                     def_field)
+            # get indices of POIs within min_distance from a fault
+            is_near_fault[near_fault_poi_idx] = True
+        # b)
+        isoffset = (np.abs(valid_eta[0,:]) > offset_tol)
+        # c)
+        is_affected = np.where(isoffset & is_near_fault)[0]
+        # d) 
+        if verbose:
+            print(f"[Info] Removing offset from {len(is_affected)} POIs")
+        for i, p in enumerate(is_affected):
+            # get offset
+            offset = valid_eta[0, p]
+            # eliminate offset
+            valid_eta[:, p] -= offset
+
         # ----------------------------------------------------------------
-        # 9) Crops the elevation time series eliminating the leading zeros
+        # 10) Crops the elevation time series eliminating the leading zeros
         # up until the arrival index. It saves the time series to a
         # dictionary to save it to a pickle file
         # ----------------------------------------------------------------
